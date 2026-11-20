@@ -167,7 +167,7 @@ struct MultiPicker<SelectionValue: Hashable>: View {
 	var options: [Choice<SelectionValue>]
 
 	@State var showChoices: Bool = false
-	@State var valueText: String = "Choose..."
+	@State var valueText: String = L("choose")
 
 	init(selection: Binding<SelectionValue>, options: [Choice<SelectionValue>]) {
 		self.selection = selection
@@ -212,7 +212,7 @@ struct MultiPicker<SelectionValue: Hashable>: View {
 		let buttons = options.map { option in
 			Alert.Button.default(Text(option.value == selection.wrappedValue ? "    \(option.label)  ✓" : option.label), action: {select(option)})
 		}
-		return ActionSheet(title: Text("Pick your preference:"), buttons: buttons + [Alert.Button.cancel()])
+		return ActionSheet(title: Text(L("pick_preference")), buttons: buttons + [Alert.Button.cancel()])
 	}
 
 	func select(_ option: Choice<SelectionValue>) {
@@ -227,28 +227,28 @@ struct ExUI_Previews: PreviewProvider {
 
 	static var previews: some View {
 		VStack {
-			CatTitle("Category Title")
+			CatTitle(L("category_title"))
 			CatList {
-				CatItem("Category Item") {
+				CatItem(L("category_item")) {
 					Toggle("", isOn: .constant(true))
 						.frame(width: 80)
 				}
 			}
-			CatTitle("Other Controls")
+			CatTitle(L("other_controls"))
 			CatList {
-				CatItem("Segmented Picker") {
+				CatItem(L("segmented_picker")) {
 					SegmentPicker(selection: $value1, options:
 					[
-						Choice("False", false),
-						Choice("True", true)
+						Choice(L("false"), false),
+						Choice(L("true"), true)
 					])
 					.frame(width: 180)
 				}
-				CatItem("Multiple Choice Picker") {
+				CatItem(L("multiple_choice_picker")) {
 					MultiPicker(selection: $value2, options:
 					[
-						Choice("False", false),
-						Choice("True", true)
+						Choice(L("false"), false),
+						Choice(L("true"), true)
 					])
 				}
 			}

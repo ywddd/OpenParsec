@@ -27,6 +27,10 @@ class ParsecMetalViewController: ParsecPlayground {
 		ParsecBackgroundManager.shared.glkViewController = metalView
 	}
 
+	func setDisplayMode(_ mode: StreamDisplayMode) {
+		metalRenderer?.displayMode = mode
+	}
+
 	func cleanUp() {
 		metalView?.isPaused = true
 		metalRenderer?.reset()

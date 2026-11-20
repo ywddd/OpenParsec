@@ -2,10 +2,11 @@ import SwiftUI
 import ParsecSDK
 import Foundation
 import AVFoundation
+import Combine
 
 struct ParsecStatusBar: View {
 	@Binding var showMenu: Bool
-	@State var metricInfo: String = "Loading..."
+	@State var metricInfo: String = L("loading")
 	@Binding var showDCAlert: Bool
 	@Binding var DCAlertText: String
 	@Binding var isReconnecting: Bool
@@ -81,6 +82,7 @@ struct ParsecStatusBar: View {
 	}
 
 	func poll() {
+		guard UIApplication.shared.applicationState != .inactive else { return }
 		if showDCAlert || ParsecBackgroundManager.shared.isPaused || ParsecBackgroundManager.shared.endedByUser {
 			return
 		}
@@ -160,7 +162,7 @@ struct ParsecStatusBar: View {
 					return
 				}
 				appNote("[stream] ended, no network, alert")
-				DCAlertText = "No network connection"
+				DCAlertText = L("no_network")
 				showDCAlert = true
 				return
 			}
@@ -217,7 +219,7 @@ struct ParsecStatusBar: View {
 				// silent: auto-reconnect spent its retries, dont nag with an alert
 				onSilentDisconnect()
 			} else {
-				DCAlertText = status.readable()
+				DCAlertText = status.connectionMessage()
 				showDCAlert = true
 			}
 			return
@@ -235,7 +237,7 @@ struct ParsecStatusBar: View {
 				ParsecView.getHostUserData()
 				// SDK forgets stream dims on reconnect, re-send them so the frame fills not corners
 				if let vc = parsecViewController {
-					CParsec.setFrame(vc.view.bounds.width, vc.view.bounds.height, UIScreen.main.scale)
+					vc.applyDisplayMode()
 				}
 			}
 			if CParsec.runningRenderer != .metal || CACurrentMediaTime() - liveSince! > 6 {
@@ -274,8 +276,8 @@ struct ParsecView: View {
 	var controller: ContentView?
 
 	@State var showDCAlert: Bool = false
-	@State var DCAlertText: String = "Disconnected (reason unknown)"
-	@State var metricInfo: String = "Loading..."
+	@State var DCAlertText: String = L("status_disconnected")
+	@State var metricInfo: String = L("loading")
 
 	@State var hideOverlay: Bool = false
 	@State var hideKeyboardButton: Bool = false
@@ -360,13 +362,13 @@ struct ParsecView: View {
 						.id(waitingForStream)
 						.transition(.opacity)
 					if waitingForNetwork {
-						Text("OpenParsec will reconnect when you're back online")
+						Text(L("will_reconnect_online"))
 							.font(.system(size: 13))
 							.foregroundColor(.white)
 							.opacity(0.7)
 					}
 					Button(action: { disconnect() }) {
-						Text("Close")
+						Text(L("close"))
 							.font(.system(size: 15, weight: .semibold))
 							.foregroundColor(.white)
 							.padding(.horizontal, 20)
@@ -386,7 +388,7 @@ struct ParsecView: View {
 			}
 
 			if dataModel.isBlocked {
-				Text("Host is using the machine")
+				Text(L("host_using_machine"))
 					.foregroundColor(.white)
 					.padding(.horizontal, 16)
 					.padding(.vertical, 10)
@@ -472,14 +474,14 @@ struct ParsecView: View {
 		.statusBarHidden(SettingsHandler.hideStatusBar)
 		.alert(isPresented: $showDCAlert) {
 			Alert(title: Text(DCAlertText),
-				  primaryButton: .default(Text("Reconnect"), action: {
+				  primaryButton: .default(Text(L("reconnect")), action: {
 					guard let peerId = ParsecBackgroundManager.shared.lastPeerId else {
 						disconnect()
 						return
 					}
 					if NetworkWatcher.shared.noNetwork {
 						DispatchQueue.main.async {
-							DCAlertText = "No network connection"
+							DCAlertText = L("no_network")
 							showDCAlert = true
 						}
 						return
@@ -487,7 +489,7 @@ struct ParsecView: View {
 					showDCAlert = false
 					reconnectTo(peerId)
 				  }),
-				  secondaryButton: .cancel(Text("Close"), action: {disconnect()}))
+				  secondaryButton: .cancel(Text(L("close")), action: {disconnect()}))
 		}
 		.onChange(of: showSettings) { open in
 			if !open { applyStreamSettings() }
@@ -517,13 +519,13 @@ struct ParsecView: View {
 			ScrollView {
 				VStack(spacing: 3) {
 					Button(action: disableOverlay) {
-						Text("Hide Buttons")
+						Text(L("hide_buttons"))
 							.padding(8)
 							.frame(maxWidth: .infinity)
 							.multilineTextAlignment(.center)
 					}
 					Button(action: toggleMute) {
-						Text("Sound: \(muted ? "OFF" : "ON")")
+						Text(String(format: L("sound_state"), L(muted ? "off" : "on")))
 							.padding(8)
 							.frame(maxWidth: .infinity)
 							.multilineTextAlignment(.center)
@@ -541,7 +543,7 @@ struct ParsecView: View {
 							}
 						}
 					} label: {
-						Text("Resolution")
+						Text(L("resolution"))
 							.padding(8)
 							.frame(maxWidth: .infinity)
 							.multilineTextAlignment(.center)
@@ -551,9 +553,9 @@ struct ParsecView: View {
 							changeBitRate(bitrate: 0)
 						}) {
 							if settingsStore.bitrate == 0 {
-								Label("Host Default", systemImage: "checkmark")
+								Label(L("host_default"), systemImage: "checkmark")
 							} else {
-								Text("Host Default")
+								Text(L("host_default"))
 							}
 						}
 						ForEach(bitrates, id: \.self) { bitrate in
@@ -568,14 +570,14 @@ struct ParsecView: View {
 							}
 						}
 					} label: {
-						Text("Bitrate")
+						Text(L("bitrate"))
 							.padding(8)
 							.frame(maxWidth: .infinity)
 							.multilineTextAlignment(.center)
 					}
 					if DataManager.model.displayConfigs.count > 1 {
 						Menu {
-							Button("Auto") {
+							Button(L("auto")) {
 								changeDisplay(displayId: "none")
 							}
 							ForEach(DataManager.model.displayConfigs, id: \.self) { config in
@@ -584,7 +586,7 @@ struct ParsecView: View {
 								}
 							}
 						} label: {
-							Text("Switch Display")
+							Text(L("switch_display"))
 								.padding(8)
 								.frame(maxWidth: .infinity)
 								.multilineTextAlignment(.center)
@@ -592,25 +594,31 @@ struct ParsecView: View {
 					}
 
 					Button(action: toggleConstantFps) {
-						Text("Constant Frame Rate: \(dataModel.constantFps ? "ON" : "OFF")")
+						Text(String(format: L("constant_frame_rate_state"), L(dataModel.constantFps ? "on" : "off")))
 							.padding(8)
 							.frame(maxWidth: .infinity)
 							.multilineTextAlignment(.center)
 					}
 					Button(action: toggleZoom) {
-						Text("Pinch to Zoom: \(zoomEnabled ? "ON" : "OFF")")
+						Text(String(format: L("pinch_to_zoom_state"), L(zoomEnabled ? "on" : "off")))
 							.padding(8)
 							.frame(maxWidth: .infinity)
 							.multilineTextAlignment(.center)
 					}
 					Button(action: toggleTouchMode) {
-						Text("Touch Mode: \(settingsStore.cursorMode == .direct ? "Direct" : "Touchpad")")
+						Text(String(format: L("touch_mode_state"), L(settingsStore.cursorMode == .direct ? "direct" : "touchpad")))
+							.padding(8)
+							.frame(maxWidth: .infinity)
+							.multilineTextAlignment(.center)
+					}
+					Button(action: toggleDisplayMode) {
+						Text(String(format: L("display_mode_state"), L(settingsStore.streamDisplayMode == .fill ? "display_fill" : "display_fit")))
 							.padding(8)
 							.frame(maxWidth: .infinity)
 							.multilineTextAlignment(.center)
 					}
 					Button(action: openSettings) {
-						Text("Settings")
+						Text(L("settings"))
 							.padding(8)
 							.frame(maxWidth: .infinity)
 							.multilineTextAlignment(.center)
@@ -627,7 +635,7 @@ struct ParsecView: View {
 				.opacity(0.25)
 				.frame(height: 1)
 			Button(action: { disconnect()}) {
-				Text("Disconnect")
+				Text(L("disconnect"))
 					.foregroundColor(.red)
 					.padding(8)
 					.frame(maxWidth: .infinity)
@@ -644,15 +652,15 @@ struct ParsecView: View {
 
 	var overlayTitle: String {
 		if waitingForNetwork {
-			return "No network connection"
+			return L("no_network")
 		}
 		if !isReconnecting {
-			return "Connection lost..."
+			return L("connection_lost")
 		}
 		if waitingForStream {
-			return "Reconnected, waiting for the stream..."
+			return L("reconnected_waiting")
 		}
-		return ParsecBackgroundManager.shared.lastHostname.map { "Reconnecting to \($0)..." } ?? "Reconnecting..."
+		return ParsecBackgroundManager.shared.lastHostname.map { String(format: L("reconnecting_to"), $0) } ?? L("reconnecting")
 	}
 
 	func post() {
@@ -749,7 +757,7 @@ struct ParsecView: View {
 		parsecViewController.onKeyboardCoversPicture = {
 			guard !panHintShown.wrappedValue else { return }
 			panHintShown.wrappedValue = true
-			withAnimation { hint.wrappedValue = "Part of the screen is under the keyboard\nDrag ↕\u{FE0E} to move it into view" }
+			withAnimation { hint.wrappedValue = L("keyboard_cover_hint") }
 			DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
 				withAnimation { hint.wrappedValue = nil }
 			}
@@ -772,6 +780,7 @@ struct ParsecView: View {
 	func applyStreamSettings() {
 		zoomEnabled = SettingsHandler.zoomEnabled
 		parsecViewController.setZoomEnabled(zoomEnabled)
+		parsecViewController.applyDisplayMode()
 		parsecViewController.updatePanHandle()
 		parsecViewController.positionCursorOverlay()
 		hideOverlay = SettingsHandler.noOverlay
@@ -829,7 +838,7 @@ struct ParsecView: View {
 		guard menu || keyboard else { return }
 		if menu { menuSwipeHintShown = true }
 		if keyboard { keyboardHintShown = true }
-		let text = [menu ? "Swipe from the left edge for the menu" : nil, keyboard ? "Tap with three fingers to show or hide the keyboard" : nil].compactMap { $0 }.joined(separator: "\n")
+		let text = [menu ? L("menu_swipe_hint") : nil, keyboard ? L("keyboard_hint") : nil].compactMap { $0 }.joined(separator: "\n")
 		withAnimation { hint = text }
 		DispatchQueue.main.asyncAfter(deadline: .now() + (menu && keyboard ? 6 : 4)) {
 			withAnimation { hint = nil }
@@ -868,7 +877,7 @@ struct ParsecView: View {
 		{ i, output in
 			Alert.Button.default(Text("\(i) - \(getDeviceName(output))"), action:{print("Selected device \(i)")})
 		}
-		return ActionSheet(title: Text("Select a Display:"), buttons:buttons + [Alert.Button.cancel()])
+		return ActionSheet(title: Text(L("select_display")), buttons:buttons + [Alert.Button.cancel()])
 	}*/
 
 	func disconnect(isBackgroundDisconnect: Bool = false) {
@@ -946,6 +955,13 @@ struct ParsecView: View {
 		DispatchQueue.main.async {
 			SettingsHandler.cursorMode = SettingsHandler.cursorMode == .direct ? .touchpad : .direct
 			parsecViewController.updatePanHandle()
+		}
+	}
+
+	func toggleDisplayMode() {
+		DispatchQueue.main.async {
+			settingsStore.streamDisplayMode = settingsStore.streamDisplayMode == .fill ? .fit : .fill
+			parsecViewController.displayMode = settingsStore.streamDisplayMode
 		}
 	}
 

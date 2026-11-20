@@ -63,7 +63,7 @@ class ParsecBackgroundManager {
 	}
 
 	func updateShortcut() {
-		UIApplication.shared.shortcutItems = lastHostname.map { [UIApplicationShortcutItem(type: Self.reconnectShortcut, localizedTitle: "Reconnect to \($0)", localizedSubtitle: nil, icon: UIApplicationShortcutIcon(systemImageName: "arrow.clockwise"), userInfo: nil)] }
+		UIApplication.shared.shortcutItems = lastHostname.map { [UIApplicationShortcutItem(type: Self.reconnectShortcut, localizedTitle: String(format: L("reconnect_to"), $0), localizedSubtitle: nil, icon: UIApplicationShortcutIcon(systemImageName: "arrow.clockwise"), userInfo: nil)] }
 	}
 
 	func connectionDidStart() {
@@ -115,11 +115,11 @@ class ParsecBackgroundManager {
 	func holdSessionInBackground() {
 		guard holdTask == .invalid else { return }
 		backgroundAt = Date()
-		holdTask = UIApplication.shared.beginBackgroundTask(withName: "stream") { [weak self] in
-			self?.endSessionInBackground("background time ran out")
+		holdTask = UIApplication.shared.beginBackgroundTask(withName: L("stream")) { [weak self] in
+			self?.endSessionInBackground(L("background_time_ran_out"))
 		}
 		guard holdTask != .invalid else {
-			endSessionInBackground("no background time")
+			endSessionInBackground(L("no_background_time"))
 			return
 		}
 		appNote("[background] holding stream")

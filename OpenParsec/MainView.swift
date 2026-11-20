@@ -7,13 +7,13 @@ struct MainView: View {
 	@State private var page: Page = .hosts
 
 	// Host page vars
-	@State var hostCountStr: String = "0 hosts"
+	@State var hostCountStr: String = "0 \(L("hosts"))"
 	@State var refreshTime: String = ""
 
 	@State var hosts: [IdentifiableHostInfo] = []
 
 	// Friend page vars
-	@State var friendCountStr: String = "0 friends"
+	@State var friendCountStr: String = "0 \(L("friends"))"
 
 	@State var userInfo: IdentifiableUserInfo?
 	@State var friends: [IdentifiableUserInfo] = []
@@ -32,6 +32,9 @@ struct MainView: View {
 	@State var pollTimer: Timer?
 	@State var approvalStartedAt: Date?
 	@State var connectStartedAt = Date()
+	@State private var attemptPolicy = ConnectionAttemptPolicy()
+	@State private var approvalPolls = 0
+	@State private var showConnectionHelp = false
 
 	@State var isRefreshing: Bool = false
 	@State var refreshError: String?
@@ -66,7 +69,7 @@ struct MainView: View {
 					Button(action: { showLogoutAlert = true }, label: { Image("SymbolExit").scaleEffect(x: -1) })
 						.padding()
 						.alert(isPresented: $showLogoutAlert) {
-							Alert(title: Text("Are you sure you want to logout?"), primaryButton: .destructive(Text("Logout"), action: logout), secondaryButton: .cancel(Text("Cancel")))
+							Alert(title: Text(L("logout_confirm")), primaryButton: .destructive(Text(L("logout")), action: logout), secondaryButton: .cancel(Text(L("cancel"))))
 						}
 //					Button(action: {
 //						if let c = controller
@@ -76,7 +79,7 @@ struct MainView: View {
 //						}
 //						
 //					}, label: {
-//						Text("Show TestView")
+//						Text(L("show_test_view"))
 //					})
 
 					Spacer()
@@ -120,11 +123,11 @@ struct MainView: View {
 						VStack {
 							if sessionExpired {
 								HStack {
-									Text("Your Parsec session expired")
+									Text(L("session_expired"))
 										.foregroundColor(Color("Foreground"))
 									Spacer()
 									Button(action: logout) {
-										Text("Sign In")
+										Text(L("sign_in"))
 											.fontWeight(.semibold)
 											.foregroundColor(Color("AccentColor"))
 											.frame(minWidth: 44, minHeight: 44)
@@ -144,7 +147,7 @@ struct MainView: View {
 										.foregroundColor(Color("Foreground"))
 									Spacer()
 									Button(action: refreshHosts) {
-										Text("Retry")
+										Text(L("retry"))
 											.fontWeight(.semibold)
 											.foregroundColor(Color("AccentColor"))
 											.frame(minWidth: 44, minHeight: 44)
@@ -162,7 +165,7 @@ struct MainView: View {
 								HStack(spacing: 8) {
 									ActivityIndicator(isAnimating: $isRefreshing, style: .medium, tint: UIColor(named: "Foreground") ?? .white)
 										.frame(width: 20, height: 20)
-									Text("Refreshing hosts...")
+									Text(L("refreshing_hosts"))
 										.foregroundColor(Color("Foreground"))
 								}
 							} else if !refreshTime.isEmpty {
@@ -174,7 +177,7 @@ struct MainView: View {
 								VStack(spacing: 0) {
 									HStack {
 										VStack(alignment: .leading, spacing: 4) {
-											Text("Last connected")
+											Text(L("last_connected"))
 												.font(.system(size: 12))
 												.opacity(0.5)
 											Text(lastHost)
@@ -182,7 +185,7 @@ struct MainView: View {
 										}
 										Spacer()
 										Button(action: reconnectLastHost) {
-											Text("Reconnect")
+											Text(L("reconnect"))
 												.lineLimit(1)
 												.fixedSize()
 												.foregroundColor(.white)
@@ -201,7 +204,7 @@ struct MainView: View {
 									}
 									.padding()
 									HStack {
-										Toggle("Reconnect on app launch", isOn: Binding(
+										Toggle(L("reconnect_on_launch"), isOn: Binding(
 											get: { SettingsHandler.autoConnectOnLaunch },
 											set: { SettingsHandler.autoConnectOnLaunch = $0 }
 										))
@@ -244,7 +247,7 @@ struct MainView: View {
 											.multilineTextAlignment(.center)
 											.opacity(0.5)
 										Button(action: { connectTo(i) }) {
-											Text("Connect")
+											Text(L("connect"))
 												.lineLimit(1)
 												.fixedSize()
 												.foregroundColor(.white)
@@ -273,7 +276,7 @@ struct MainView: View {
 								.cornerRadius(8)
 								.contextMenu {
 									Button(action: { UIPasteboard.general.string = i.hostname }) {
-										Label("Copy Name", systemImage: "doc.on.doc")
+										Label(L("copy_name"), systemImage: "doc.on.doc")
 									}
 								}
 							}
@@ -288,7 +291,7 @@ struct MainView: View {
 					ScrollView(.vertical) {
 						VStack {
 							if let user = userInfo {
-								Text("You")
+								Text(L("you"))
 									.multilineTextAlignment(.center)
 									.opacity(0.5)
 								HStack {
@@ -320,7 +323,7 @@ struct MainView: View {
 								.cornerRadius(12)
 							}
 							if friends.count > 0 {
-								Text("Friends")
+								Text(L("friends"))
 									.multilineTextAlignment(.center)
 									.opacity(0.5)
 								ForEach(friends) { i in
@@ -367,7 +370,13 @@ struct MainView: View {
 				.padding(.top, -8)
 				.frame(maxWidth: .infinity)
 				.alert(isPresented: $showBaseAlert) {
-					Alert(title: Text(baseAlertText))
+					if showConnectionHelp {
+						return Alert(title: Text(L("connection_failed")), message: Text(baseAlertText),
+							primaryButton: .default(Text(L("open_app_settings")), action: {
+								if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+							}), secondaryButton: .cancel(Text("OK")))
+					}
+					return Alert(title: Text(baseAlertText))
 				}
 
 				// Page controls
@@ -377,7 +386,7 @@ struct MainView: View {
 					{
 						VStack {
 							Image(systemName: "desktopcomputer")
-							Text("Hosts")
+								Text(L("hosts"))
 						}
 					})
 					.foregroundColor(Color(page == .hosts ? "AccentColor" : "ForegroundInactive"))
@@ -387,7 +396,7 @@ struct MainView: View {
 					{
 						VStack {
 							Image(systemName: "person.2.fill")
-							Text("Friends")
+							Text(L("friends"))
 						}
 					})
 					.foregroundColor(Color(page == .friends ? "AccentColor" : "ForegroundInactive"))
@@ -403,7 +412,10 @@ struct MainView: View {
 				.zIndex(1)
 			}
 			.onAppear(perform: initView)
-			.onDisappear { ParsecBackgroundManager.shared.onShortcutReconnect = nil }
+			.onDisappear {
+				pollTimer?.invalidate()
+				ParsecBackgroundManager.shared.onShortcutReconnect = nil
+			}
 			.disabled(busy) // disable view if busy
 
 			// Settings screen
@@ -413,13 +425,13 @@ struct MainView: View {
 			if isConnecting {
 				VStack(spacing: 12) {
 					ActivityIndicator(isAnimating: $isConnecting, style: .large, tint: .white)
-					Text(waitingForApproval ? "Waiting for \(connectingToName) to approve you..." : retryingConnect ? "\(connectingToName) didn't answer, trying again..." : "Requesting connection to \(connectingToName)...")
+					Text(waitingForApproval ? String(format: L("waiting_for_approval"), connectingToName) : retryingConnect ? String(format: L("did_not_answer_retry"), connectingToName) : String(format: L("requesting_connection"), connectingToName))
 						.font(.system(size: 16, weight: .medium))
 						.foregroundColor(.white)
 						.multilineTextAlignment(.center)
 						.padding(.horizontal)
 					Button(action: cancelConnection) {
-						Text("Cancel")
+						Text(L("cancel"))
 							.font(.system(size: 15, weight: .semibold))
 							.foregroundColor(.white)
 							.padding(.horizontal, 20)
@@ -523,7 +535,7 @@ struct MainView: View {
 						if statusCode == 200 { // 200 OK
 							sessionExpired = false
 							guard let info: HostInfoList = try? decoder.decode(HostInfoList.self, from: data) else {
-								refreshError = "Couldn't refresh hosts: bad response"
+							refreshError = L("refresh_hosts_bad_response")
 								return
 							}
 							refreshError = nil
@@ -538,24 +550,19 @@ struct MainView: View {
 								if lastHostShown != nil { lastHostShown = current.hostname }
 							}
 
-							var grammar: String = "hosts"
-							if hosts.count == 1 {
-								grammar = "host"
-							}
-
-							hostCountStr = "\(hosts.count) \(grammar)"
+							hostCountStr = "\(hosts.count) \(L("hosts"))"
 
 							let formatter = DateFormatter()
 							formatter.dateStyle = .short
 							formatter.timeStyle = .short
-							refreshTime = "Last refreshed at \(formatter.string(from: Date()))"
+							refreshTime = String(format: L("last_refreshed"), formatter.string(from: Date()))
 						} else if statusCode == 403, let info: ErrorInfo = try? decoder.decode(ErrorInfo.self, from: data) { // 403 Forbidden
-							refreshError = "Couldn't refresh hosts: \(info.error)"
+							refreshError = String(format: L("refresh_hosts_error"), info.error)
 						} else {
-							refreshError = "Couldn't refresh hosts (HTTP \(statusCode))"
+							refreshError = String(format: L("refresh_hosts_http"), statusCode)
 						}
 					} else {
-						refreshError = "Can't reach Parsec"
+						refreshError = L("status_ws_err_connect")
 					}
 				}
 			}
@@ -594,7 +601,8 @@ struct MainView: View {
 						} else {
 							guard let info: ErrorInfo = try? decoder.decode(ErrorInfo.self, from: data) else { return }
 
-							baseAlertText = "Error gathering user info: \(info.error)"
+							baseAlertText = String(format: L("user_info_error"), info.error)
+							showConnectionHelp = false
 							showBaseAlert = true
 						}
 					}
@@ -638,16 +646,12 @@ struct MainView: View {
 								}
 							}
 
-							var grammar: String = "friends"
-							if friends.count == 1 {
-								grammar = "friend"
-							}
-
-							friendCountStr = "\(friends.count) \(grammar)"
+							friendCountStr = "\(friends.count) \(L("friends"))"
 						} else {
 							guard let info: ErrorInfo = try? decoder.decode(ErrorInfo.self, from: data) else { return }
 
-							baseAlertText = "Error gathering friends: \(info.error)"
+							baseAlertText = String(format: L("friends_error"), info.error)
+							showConnectionHelp = false
 							showBaseAlert = true
 						}
 					}
@@ -658,6 +662,7 @@ struct MainView: View {
 	}
 
 	func connectTo(_ who: IdentifiableHostInfo, retried: Bool = false) {
+		showConnectionHelp = false
 		if NetworkWatcher.shared.noNetwork {
 			appNote("[connect] no network, not trying")
 			withAnimation {
@@ -665,7 +670,7 @@ struct MainView: View {
 				waitingForApproval = false
 				retryingConnect = false
 			}
-			baseAlertText = "No network connection"
+			baseAlertText = L("no_network")
 			showBaseAlert = true
 			return
 		}
@@ -691,8 +696,10 @@ struct MainView: View {
 
 		connectStartedAt = Date()
 		let status = CParsec.connect(who.id)
-		appNote("[connect] started, status \(status.rawValue)")
+		appNote("[connect] started, status \(status.rawValue), network \(NetworkWatcher.shared.interfaceDescription)")
 		connectPolls = 0
+		attemptPolicy = ConnectionAttemptPolicy()
+		approvalPolls = 0
 		approvalStartedAt = nil
 
 		// Polling status
@@ -704,6 +711,7 @@ struct MainView: View {
 	}
 
 	func pollConnect(_ who: IdentifiableHostInfo) {
+		guard isConnecting, attemptPolicy.tick(isActive: UIApplication.shared.applicationState == .active) else { return }
 		let status = CParsec.getStatus()
 		connectPolls += 1
 
@@ -714,7 +722,16 @@ struct MainView: View {
 			return
 		}
 
-		if status == PARSEC_CONNECTING { return } // wait
+		if status == PARSEC_CONNECTING {
+			if attemptPolicy.timedOut { retryOrGiveUp(who) }
+			return
+		}
+
+		if ConnectionAttemptPolicy.shouldRetry(isPeerFailure: status.isPeerConnectionFailure, alreadyRetried: retryingConnect) {
+			appNote("[connect] retrying peer setup, code \(status.rawValue)")
+			retryOrGiveUp(who)
+			return
+		}
 
 		if status == CONNECT_WRN_APPROVAL {
 			if approvalStartedAt == nil {
@@ -724,10 +741,11 @@ struct MainView: View {
 					return
 				}
 			}
-			let started = approvalStartedAt ?? Date()
-			approvalStartedAt = started
+			approvalStartedAt = approvalStartedAt ?? Date()
+			approvalPolls += 1
+			attemptPolicy = ConnectionAttemptPolicy()
 			if !waitingForApproval { withAnimation { waitingForApproval = true } }
-			if Date().timeIntervalSince(started) < 60 { return }
+			if approvalPolls < 60 { return }
 		}
 
 		withAnimation {
@@ -744,7 +762,8 @@ struct MainView: View {
 			}
 		} else {
 			CParsec.disconnect()
-			baseAlertText = status.readable(connecting: true)
+			baseAlertText = status.connectionMessage(connecting: true)
+			showConnectionHelp = status.isLocalNetworkFailure
 			showBaseAlert = true
 		}
 
@@ -761,8 +780,9 @@ struct MainView: View {
 		withAnimation {
 			isConnecting = false
 			retryingConnect = false
+			waitingForApproval = false
 		}
-		baseAlertText = "\(who.hostname) didn't answer the connection request"
+		baseAlertText = String(format: L("did_not_answer"), who.hostname)
 		showBaseAlert = true
 	}
 

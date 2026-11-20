@@ -111,6 +111,7 @@ class ParsecSDKBridge: ParsecService {
 
 	public var clientWidth: Float = 1920
 	public var clientHeight: Float = 1080
+	var displayMode: StreamDisplayMode = .fill
 	private var hasFrame = false
 	private var didSetDimensions = false
 
@@ -147,7 +148,8 @@ class ParsecSDKBridge: ParsecService {
 
 		ParsecSetLogCallback(
 			{ (level, msg, _) in
-				let line = "[\(level == LOG_DEBUG ? "D" : "I")] \(String(cString: msg!))"
+				guard let msg = msg else { return }
+				let line = "[\(level == LOG_DEBUG ? "D" : "I")] \(String(cString: msg))"
 				os_log("%{public}@", log: sdkLog, type: level == LOG_DEBUG ? .info : .default, line)
 				ConnectionLog.shared.add("sdk \(line)")
 				if line.contains("signal_") && line.contains("] = -") {
@@ -302,29 +304,17 @@ class ParsecSDKBridge: ParsecService {
 			mouseInfo.mouseY = Int32(height / 2)
 			return
 		}
-		let moved = carryCursor(CGPoint(x: CGFloat(mouseInfo.mouseX), y: CGFloat(mouseInfo.mouseY)), from: oldSize, to: CGSize(width: width, height: height))
-		mouseInfo.mouseX = Int32(moved.x.rounded())
-		mouseInfo.mouseY = Int32(moved.y.rounded())
-	}
-
-	private func carryCursor(_ point: CGPoint, from old: CGSize, to new: CGSize) -> CGPoint {
-		let host = CGSize(width: CGFloat(hostWidth), height: CGFloat(hostHeight))
-		guard host.width > 0, host.height > 0 else {
-			return CGPoint(x: point.x * new.width / old.width, y: point.y * new.height / old.height)
-		}
-		let oldScale = min(old.width / host.width, old.height / host.height)
-		let newScale = min(new.width / host.width, new.height / host.height)
-		let hostX = (point.x - (old.width - host.width * oldScale) / 2) / oldScale
-		let hostY = (point.y - (old.height - host.height * oldScale) / 2) / oldScale
-		let x = hostX * newScale + (new.width - host.width * newScale) / 2
-		let y = hostY * newScale + (new.height - host.height * newScale) / 2
-		return CGPoint(x: min(max(x, 0), new.width), y: min(max(y, 0), new.height))
+		let geometry = StreamGeometry(viewportSize: oldSize, hostSize: CGSize(width: CGFloat(hostWidth), height: CGFloat(hostHeight)), mode: displayMode)
+		let hostPoint = geometry.hostPoint(forScreenPoint: CGPoint(x: CGFloat(mouseInfo.mouseX), y: CGFloat(mouseInfo.mouseY)))
+		let newGeometry = StreamGeometry(viewportSize: CGSize(width: width, height: height), hostSize: CGSize(width: CGFloat(hostWidth), height: CGFloat(hostHeight)), mode: displayMode)
+		let moved = newGeometry.screenPoint(forHostPoint: hostPoint)
+		mouseInfo.mouseX = ParsecSDKBridge.clamp(Int32(moved.x.rounded()), minValue: 0, maxValue: Int32(width))
+		mouseInfo.mouseY = ParsecSDKBridge.clamp(Int32(moved.y.rounded()), minValue: 0, maxValue: Int32(height))
 	}
 
 	// timeout in ms, 16 == 60 FPS, 8 == 120 FPS, etc.
-	func renderGLFrame(timeout: UInt32 = 16) {
-
-		ParsecClientGLRenderFrame(_parsec, UInt8(DEFAULT_STREAM), nil, nil, timeout)
+	func renderGLFrame(timeout: UInt32 = 16, preRender: ParsecPreRenderCallback? = nil, opaque: UnsafeRawPointer? = nil) {
+		ParsecClientGLRenderFrame(_parsec, UInt8(DEFAULT_STREAM), preRender, opaque, timeout)
 	}
 
 	func glDestroy() {
@@ -437,8 +427,9 @@ class ParsecSDKBridge: ParsecService {
 		let isEcho = CACurrentMediaTime() - lastMoveSent < 0.3
 		let settling = CACurrentMediaTime() - dimsSetAt < 1
 		// a report at the picture's top left corner carries no position
-		let scale = min(clientWidth / hostWidth, clientHeight / hostHeight)
-		let atOrigin = abs(Float(event.cursor.positionX) - (clientWidth - hostWidth * scale) / 2) < 1 && abs(Float(event.cursor.positionY) - (clientHeight - hostHeight * scale) / 2) < 1
+		let geometry = StreamGeometry(viewportSize: CGSize(width: CGFloat(clientWidth), height: CGFloat(clientHeight)), hostSize: CGSize(width: CGFloat(hostWidth), height: CGFloat(hostHeight)), mode: displayMode)
+		let origin = geometry.screenPoint(forHostPoint: .zero)
+		let atOrigin = abs(Float(event.cursor.positionX) - Float(origin.x)) < 1 && abs(Float(event.cursor.positionY) - Float(origin.y)) < 1
 		if didSetDimensions && !settling && !atOrigin && (prevHidden || prevRelative || !isEcho) && !event.cursor.relative && !event.cursor.hidden {
 			mouseInfo.mouseX = ParsecSDKBridge.clamp(Int32(clamping: event.cursor.positionX), minValue: 0, maxValue: Int32(clientWidth))
 			mouseInfo.mouseY = ParsecSDKBridge.clamp(Int32(clamping: event.cursor.positionY), minValue: 0, maxValue: Int32(clientHeight))

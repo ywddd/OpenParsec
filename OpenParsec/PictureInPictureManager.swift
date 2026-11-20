@@ -228,33 +228,17 @@ class PictureInPictureManager: NSObject {
 		if currentFBO == 0 { return }
 
 		// Calculate the letterboxed stream region within the view
-		let sW = Float(lastValidStreamWidth > 0 ? lastValidStreamWidth : viewWidth)
-		let sH = Float(lastValidStreamHeight > 0 ? lastValidStreamHeight : viewHeight)
-		let vW = Float(viewWidth)
-		let vH = Float(viewHeight)
-		let streamAspect = sW / max(sH, 1)
-		let viewAspect = vW / max(vH, 1)
-
-		var srcX: GLint = 0
-		var srcY: GLint = 0
-		var srcW: GLint = GLint(viewWidth)
-		var srcH: GLint = GLint(viewHeight)
-
-		if lastValidStreamWidth > 0 && lastValidStreamHeight > 0 {
-			if streamAspect > viewAspect {
-				let renderH = vW / streamAspect
-				srcX = 0
-				srcY = GLint((vH - renderH) / 2)
-				srcW = GLint(vW)
-				srcH = GLint(renderH)
-			} else if streamAspect < viewAspect {
-				let renderW = vH * streamAspect
-				srcX = GLint((vW - renderW) / 2)
-				srcY = 0
-				srcW = GLint(renderW)
-				srcH = GLint(vH)
-			}
-		}
+		let geometry = StreamGeometry(
+			viewportSize: CGSize(width: CGFloat(viewWidth), height: CGFloat(viewHeight)),
+			hostSize: CGSize(width: CGFloat(lastValidStreamWidth > 0 ? lastValidStreamWidth : viewWidth),
+							 height: CGFloat(lastValidStreamHeight > 0 ? lastValidStreamHeight : viewHeight)),
+			mode: SettingsHandler.streamDisplayMode
+		)
+		let visible = geometry.visibleHostRect.intersection(CGRect(x: 0, y: 0, width: geometry.hostSize.width, height: geometry.hostSize.height))
+		let srcX = GLint((visible.minX * geometry.scale).rounded())
+		let srcY = GLint((visible.minY * geometry.scale).rounded())
+		let srcW = GLint(max(1, (visible.width * geometry.scale).rounded()))
+		let srcH = GLint(max(1, (visible.height * geometry.scale).rounded()))
 
 		// Blit view FBO → capture FBO with Y-flip
 		glBindFramebuffer(GLenum(GL_READ_FRAMEBUFFER), GLenum(currentFBO))

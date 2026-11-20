@@ -36,7 +36,7 @@ struct LoginView: View {
 						.padding([.top, .bottom, .trailing])
 				}
 				.frame(height: 80)
-				TextField("Email", text: $inputEmail)
+				TextField(L("email"), text: $inputEmail)
 					.padding()
 					.background(Rectangle().fill(Color("BackgroundField")))
 					.cornerRadius(8)
@@ -44,7 +44,7 @@ struct LoginView: View {
 					.autocapitalization(/*@START_MENU_TOKEN@*/.none/*@END_MENU_TOKEN@*/)
 					.keyboardType(.emailAddress)
 					.textContentType(.emailAddress)
-				SecureField("Password", text: $inputPassword, onCommit: { authenticate() })
+				SecureField(L("password"), text: $inputPassword, onCommit: { authenticate() })
 					.padding()
 					.background(Rectangle().fill(Color("BackgroundField")))
 					.cornerRadius(8)
@@ -56,7 +56,7 @@ struct LoginView: View {
 						Rectangle()
 							.fill(Color("AccentColor"))
 							.cornerRadius(8)
-						Text("Login")
+						Text(L("login"))
 							.foregroundColor(.white)
 					}
 					.frame(height: 54)
@@ -78,12 +78,12 @@ struct LoginView: View {
 						if isLoading {
 							ActivityIndicator(isAnimating: $isLoading, style: .large, tint: .white)
 							 .padding()
-						 Text("Loading...")
+						 Text(L("loading"))
 							 .multilineTextAlignment(.center)
 						} else if presentTFAAlert {
-							Text("Please enter your 2FA code from your authenticator app")
+							Text(L("tfa_prompt"))
 								.multilineTextAlignment(.center)
-							SecureField("2FA Code", text: $inputTFA)
+							SecureField(L("tfa_code"), text: $inputTFA)
 								.padding()
 								.background(Rectangle().fill(Color("BackgroundField")))
 								.foregroundColor(Color("Foreground"))
@@ -97,7 +97,7 @@ struct LoginView: View {
 										Rectangle()
 											.fill(Color("BackgroundButton"))
 											.cornerRadius(8)
-										Text("Cancel")
+										Text(L("cancel"))
 											.foregroundColor(Color("Foreground"))
 									}
 									.frame(height: 54)
@@ -107,7 +107,7 @@ struct LoginView: View {
 										Rectangle()
 											.fill(Color("AccentColor"))
 											.cornerRadius(8)
-										Text("Enter")
+										Text(L("enter"))
 											.foregroundColor(.white)
 									}
 									.frame(height: 54)
@@ -124,7 +124,7 @@ struct LoginView: View {
 		}
 		.foregroundColor(Color("Foreground"))
 		.alert(isPresented: $showAlert) {
-			Alert(title: Text("Login Failed"), message: Text(alertText))
+			Alert(title: Text(L("login_failed")), message: Text(alertText))
 		}
 		.onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in retryRestore() }
 		.onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in retryRestore() }
@@ -177,7 +177,7 @@ struct LoginView: View {
 				isLoading = false
 				if let data = data {
 					guard let statusCode = (response as? HTTPURLResponse)?.statusCode else {
-						alertText = "Bad response from the server"
+						alertText = L("bad_response")
 						showAlert = true
 						return
 					}
@@ -186,7 +186,7 @@ struct LoginView: View {
 					if statusCode == 201 { // 201 Created
 						// store it and recover it from the next app opening, so people won't swear
 						guard let info: ClientInfo = try? decoder.decode(ClientInfo.self, from: data) else {
-							alertText = "Bad response from the server"
+							alertText = L("bad_response")
 							showAlert = true
 							return
 						}
@@ -200,19 +200,17 @@ struct LoginView: View {
 						}
 					} else if statusCode >= 400 { // 4XX client errors
 						guard let info: ErrorInfo = try? decoder.decode(ErrorInfo.self, from: data) else {
-							alertText = "Login failed (HTTP \(statusCode))"
+							alertText = String(format: L("login_failed_http"), statusCode)
 							showAlert = true
 							return
 						}
 
 						let json = try? JSONSerialization.jsonObject(with: data, options: [])
 						if let dict = json as? [String: Any], let isTFARequired = dict["tfa_required"] as? Bool {
-							print("Code output:")
-							print(dict)
 							if isTFARequired {
 								presentTFAAlert = true
 							} else {
-								alertText = "Error: \(info)"
+								alertText = String(format: L("error_prefix"), info.error)
 								showAlert = true
 							}
 						} else {
@@ -220,11 +218,11 @@ struct LoginView: View {
 							showAlert = true
 						}
 					} else {
-						alertText = "Login failed (HTTP \(statusCode))"
+							alertText = String(format: L("login_failed_http"), statusCode)
 						showAlert = true
 					}
 				} else {
-					alertText = error?.localizedDescription ?? "Could not reach the server"
+					alertText = error?.localizedDescription ?? L("could_not_reach_server")
 					showAlert = true
 				}
 			}

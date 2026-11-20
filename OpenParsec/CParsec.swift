@@ -4,8 +4,8 @@ import CoreGraphics
 import GLKit
 
 enum ParsecResolution: String, CaseIterable, Hashable {
-	case host = "Host Resolution"
-	case client = "Client Resolution" // updated dynamically during connection
+	case host = "host_resolution"
+	case client = "client_resolution" // updated dynamically during connection
 	case r3840x2160_16_9 = "3840x2160 (16:9)"
 	case r3840x1600_21_9 = "3840x1600 (21:9)"
 	case r3440x1440_21_9 = "3440x1440 (21:9)"
@@ -103,7 +103,11 @@ enum ParsecResolution: String, CaseIterable, Hashable {
 	}
 
 	var desc: String {
-		return rawValue
+		switch self {
+		case .host: return L("host_resolution")
+		case .client: return L("client_resolution")
+		default: return rawValue
+		}
 	}
 
 	static var resolutions: [ParsecResolution] {
@@ -142,7 +146,7 @@ protocol ParsecService {
 	func getStatus() -> ParsecStatus
 	func getStatusEx(_ pcs: inout ParsecClientStatus) -> ParsecStatus
 	func setFrame(_ width: CGFloat, _ height: CGFloat, _ scale: CGFloat)
-	func renderGLFrame(timeout: UInt32)
+	func renderGLFrame(timeout: UInt32, preRender: ParsecPreRenderCallback?, opaque: UnsafeRawPointer?)
 	func glDestroy()
 	func pollFrame(timeout: UInt32, callback: ParsecFrameCallback, opaque: UnsafeRawPointer) -> ParsecStatus
 	func setMuted(_ muted: Bool)
@@ -221,8 +225,8 @@ class CParsec {
 		parsecImpl.setFrame(width, height, scale)
 	}
 
-	static func renderGLFrame(timeout: UInt32 = 16) { // timeout in ms, 16 == 60 FPS, 8 == 120 FPS, etc.
-		parsecImpl.renderGLFrame(timeout: timeout)
+	static func renderGLFrame(timeout: UInt32 = 16, preRender: ParsecPreRenderCallback? = nil, opaque: UnsafeRawPointer? = nil) { // timeout in ms, 16 == 60 FPS, 8 == 120 FPS, etc.
+		parsecImpl.renderGLFrame(timeout: timeout, preRender: preRender, opaque: opaque)
 	}
 
 	static func glDestroy() {

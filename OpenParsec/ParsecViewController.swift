@@ -10,6 +10,7 @@ protocol ParsecPlayground {
 	func viewDidLoad()
 	func cleanUp()
 	func updateSize(width: CGFloat, height: CGFloat)
+	func setDisplayMode(_ mode: StreamDisplayMode)
 }
 
 class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchInputDelegate {
@@ -89,6 +90,10 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	var menuEdgeSwipeRight: UIScreenEdgePanGestureRecognizer?
 	var scrollView: UIScrollView!
 	var contentView: UIView!
+	var displayMode: StreamDisplayMode {
+		didSet { applyDisplayMode() }
+	}
+	var initialDisplayMode: StreamDisplayMode?
 	var lastLaidOutWidth: CGFloat = 0
 	var lastLaidOutHeight: CGFloat = 0
 
@@ -101,6 +106,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	}
 
 	init() {
+		initialDisplayMode = SettingsHandler.streamDisplayMode
 		super.init(nibName: nil, bundle: nil)
 
 		let update: () -> Void = { [weak self] in self?.updateImage() }
@@ -117,9 +123,16 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 			}
 			self.glkView = ParsecGLKViewController(viewController: self, updateImage: update)
 		}
+		glkView.setDisplayMode(displayMode)
+		if let bridge = CParsec.parsecImpl as? ParsecSDKBridge {
+			bridge.displayMode = displayMode
+		}
 
 		self.gamePadController = GamepadController()
 		self.touchController = TouchController()
+		if let initialDisplayMode {
+			displayMode = initialDisplayMode
+		}
 	}
 
 	required init?(coder: NSCoder) {
@@ -204,6 +217,34 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		let fps = SettingsHandler.preferredFramesPerSecond == 0 ? UIScreen.main.maximumFramesPerSecond : SettingsHandler.preferredFramesPerSecond
 		(glkView as? ParsecMetalViewController)?.metalView.preferredFramesPerSecond = fps
 		(glkView as? ParsecGLKViewController)?.glkViewController.preferredFramesPerSecond = fps
+	}
+
+	private func syncDisplayModeToRenderers() {
+		glkView.setDisplayMode(displayMode)
+		if let bridge = CParsec.parsecImpl as? ParsecSDKBridge {
+			bridge.displayMode = displayMode
+		}
+	}
+
+	func applyDisplayMode() {
+		syncDisplayModeToRenderers()
+		guard scrollView != nil else { return }
+		let hostSize = CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight))
+		let viewport = view.bounds.size
+		guard hostSize.width > 0, hostSize.height > 0, viewport.width > 0, viewport.height > 0 else { return }
+		stopMomentum()
+		scrollView.zoomScale = 1.0
+		let geometry = StreamGeometry(viewportSize: viewport, hostSize: hostSize, mode: displayMode)
+		glkView.updateSize(width: geometry.contentSize.width, height: geometry.contentSize.height)
+		contentView.frame = geometry.contentRect
+		scrollView.contentSize = geometry.contentSize
+		scrollView.contentOffset = CGPoint(x: max(0, -geometry.contentOffset.x), y: max(0, -geometry.contentOffset.y))
+		let hostPoint = StreamGeometry(viewportSize: viewport, hostSize: hostSize, mode: displayMode)
+			.hostPoint(forScreenPoint: CGPoint(x: CGFloat(CParsec.mouseInfo.mouseX), y: CGFloat(CParsec.mouseInfo.mouseY)))
+		let screenPoint = geometry.screenPoint(forHostPoint: hostPoint)
+		CParsec.sendMousePosition(Int32(screenPoint.x.rounded()), Int32(screenPoint.y.rounded()))
+		CParsec.setFrame(viewport.width, viewport.height, UIScreen.main.scale)
+		positionCursorOverlay()
 	}
 
 	override func viewDidLoad() {
@@ -353,8 +394,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		scrollView.zoomScale = 1.0
 
 		self.glkView.updateSize(width: w, height: h)
-		contentView.frame.size = CGSize(width: w, height: h)
-		scrollView.contentSize = CGSize(width: w, height: h)
+		applyStreamLayout(width: w, height: h)
 		CParsec.setFrame(w, h, UIScreen.main.scale)
 
         // Reset accessory view to ensure correct width in new orientation
@@ -377,9 +417,22 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		lastLaidOutWidth = w
 		lastLaidOutHeight = h
 		glkView.updateSize(width: w, height: h)
-		contentView.frame.size = CGSize(width: w, height: h)
-		scrollView.contentSize = CGSize(width: w, height: h)
+		applyStreamLayout(width: w, height: h)
 		CParsec.setFrame(w, h, UIScreen.main.scale)
+	}
+
+	private func applyStreamLayout(width: CGFloat, height: CGFloat) {
+		let hostSize = CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight))
+		guard hostSize.width > 0, hostSize.height > 0 else {
+			contentView.frame.size = CGSize(width: width, height: height)
+			scrollView.contentSize = CGSize(width: width, height: height)
+			return
+		}
+		let geometry = StreamGeometry(viewportSize: CGSize(width: width, height: height), hostSize: hostSize, mode: displayMode)
+		glkView.updateSize(width: geometry.contentSize.width, height: geometry.contentSize.height)
+		contentView.frame = geometry.contentRect
+		scrollView.contentSize = geometry.contentSize
+		scrollView.contentOffset = CGPoint(x: max(0, -geometry.contentOffset.x), y: max(0, -geometry.contentOffset.y))
 	}
 
 	override func viewDidAppear(_ animated: Bool) {
@@ -610,7 +663,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	func setPanHandleAxes() {
 		guard let handle = panHandle, !handle.isHidden else { return }
 		let zoomed = scrollView.zoomScale > 1.01
-		let label = zoomed ? "Move screen in any direction" : "Move screen up or down"
+		let label = L(zoomed ? "pan_any_direction" : "pan_up_down")
 		guard handle.accessibilityLabel != label else { return }
 		handle.image = UIImage(systemName: zoomed ? "arrow.up.and.down.and.arrow.left.and.right" : "arrow.up.and.down")
 		handle.accessibilityLabel = label
@@ -1415,7 +1468,7 @@ extension ParsecViewController: UIKeyInput, UITextInputTraits {
 		let doneButton = UIButton(type: .system)
 		doneButton.frame = CGRect(x: toolbarBackground.bounds.width - 70, y: 0, width: 60, height: 44)
 		doneButton.autoresizingMask = [.flexibleLeftMargin]
-		doneButton.setTitle("Done", for: .normal)
+		doneButton.setTitle(L("done"), for: .normal)
 		doneButton.addTarget(self, action: #selector(doneTapped), for: .touchUpInside)
 
 		let handle = UIImageView(image: UIImage(systemName: "arrow.up.and.down"))
@@ -1425,7 +1478,7 @@ extension ParsecViewController: UIKeyInput, UITextInputTraits {
 		handle.isUserInteractionEnabled = true
 		handle.isHidden = true
 		handle.isAccessibilityElement = true
-		handle.accessibilityLabel = "Move screen up or down"
+		handle.accessibilityLabel = L("pan_up_down")
 		handle.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(handlePanHandle(_:))))
 		let handleDoubleTap = UITapGestureRecognizer(target: self, action: #selector(handlePanHandleDoubleTap(_:)))
 		handleDoubleTap.numberOfTapsRequired = 2

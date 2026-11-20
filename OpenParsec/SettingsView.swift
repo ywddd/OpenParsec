@@ -41,7 +41,7 @@ struct SettingsView: View {
 								 .padding()
 								Spacer()
 							}
-							Text("Settings")
+							Text(L("settings"))
 								.multilineTextAlignment(.center)
 								.foregroundColor(Color("Foreground"))
 								.font(.system(size: 20, weight: .medium))
@@ -53,130 +53,137 @@ struct SettingsView: View {
 
 					ScrollView {
 						VStack {
-							CatTitle("Touch & Mouse")
+							CatTitle(L("touch_and_mouse"))
 							CatList {
-								CatItem("Touch Mode") {
+								CatItem(L("touch_mode")) {
 									MultiPicker(selection: $settings.cursorMode, options:
 									[
-										Choice("Touchpad", CursorMode.touchpad),
-										Choice("Direct", CursorMode.direct)
+										Choice(L("touchpad"), CursorMode.touchpad),
+										Choice(L("direct"), CursorMode.direct)
 									])
 								}
-								CatItem("Right Click") {
+								CatItem(L("right_click")) {
 									MultiPicker(selection: $settings.rightClickPosition, options:
 									[
-										Choice("First Finger", RightClickPosition.firstFinger),
-										Choice("Middle", RightClickPosition.middle),
-										Choice("Second Finger", RightClickPosition.secondFinger)
+										Choice(L("first_finger"), RightClickPosition.firstFinger),
+										Choice(L("middle"), RightClickPosition.middle),
+										Choice(L("second_finger"), RightClickPosition.secondFinger)
 									])
 								}
-								CatSlider("Pointer Speed", value: $settings.mouseSensitivity, in: 0.1...4, step: 0.1)
-								CatSlider("Cursor Size", value: $settings.cursorScale, in: 0.1...4, step: 0.1)
-								CatSlider("Scroll Speed", value: $settings.scrollSensitivity, in: 0.5...5, step: 0.5)
-								CatItem("Reverse Scrolling") {
+								CatSlider(L("pointer_speed"), value: $settings.mouseSensitivity, in: 0.1...4, step: 0.1)
+								CatSlider(L("cursor_size"), value: $settings.cursorScale, in: 0.1...4, step: 0.1)
+								CatSlider(L("scroll_speed"), value: $settings.scrollSensitivity, in: 0.5...5, step: 0.5)
+								CatItem(L("reverse_scrolling")) {
 									Toggle("", isOn: $settings.reverseScrollDirection)
 										.frame(width: 80)
 								}
-								CatItem("Pinch to Zoom") {
+								CatItem(L("pinch_to_zoom")) {
 									Toggle("", isOn: $settings.zoomEnabled)
 										.frame(width: 80)
 								}
 							}
-							CatTitle("Keyboard")
+							CatTitle(L("keyboard"))
 							CatList {
-								CatItem("Show Keyboard Button") {
+								CatItem(L("show_keyboard_button")) {
 									Toggle("", isOn: $settings.showKeyboardButton)
 										.frame(width: 80)
 								}
-								CatItem("Option Key as Command") {
+								CatItem(L("option_as_command")) {
 									Toggle("", isOn: $settings.optionAsCommand)
 										.frame(width: 80)
 								}
 							}
-							CatTitle("Video")
+							CatTitle(L("video"))
 							CatList {
-								CatItem("Renderer") {
+								CatItem(L("display_mode")) {
+									SegmentPicker(selection: $settings.streamDisplayMode, options: [
+										Choice(L("display_fill"), StreamDisplayMode.fill),
+										Choice(L("display_fit"), StreamDisplayMode.fit)
+									])
+									.frame(width: 165)
+								}
+								CatItem(L("renderer")) {
 									SegmentPicker(selection: $settings.renderer, options: [
 										Choice("OpenGL", RendererType.opengl),
 										Choice("Metal", RendererType.metal)
 									])
 									.frame(width: 165)
 								}
-								CatItem("Resolution") {
+								CatItem(L("resolution")) {
 									MultiPicker(selection: $settings.resolution, options: resolutionChoices)
 								}
-								CatItem("Bitrate") {
-									MultiPicker(selection: $settings.bitrate, options: [Choice("Host Default", 0)] + ParsecResolution.bitrates.map { Choice("\($0) Mbps", $0) })
+								CatItem(L("bitrate")) {
+									MultiPicker(selection: $settings.bitrate, options: [Choice(L("host_default"), 0)] + ParsecResolution.bitrates.map { Choice("\($0) Mbps", $0) })
 								}
-								CatItem("Frame Rate") {
+								CatItem(L("frame_rate")) {
 									MultiPicker(selection: $settings.preferredFramesPerSecond, options:
 									[
-										Choice("Auto (Device Max)", 0),
+										Choice(L("auto_device_max"), 0),
 										Choice("120 FPS", 120),
 										Choice("60 FPS", 60),
 										Choice("30 FPS", 30)
 									])
 								}
-								CatItem("Constant Frame Rate") {
+								CatItem(L("constant_frame_rate")) {
 									Toggle("", isOn: $settings.constantFps)
 										.frame(width: 80)
 								}
-								CatItem("Codec") {
+								CatItem(L("codec")) {
 									MultiPicker(selection: $settings.decoder, options:
 									[
 										Choice("H.264", DecoderPref.h264),
-										Choice("Prefer H.265", DecoderPref.h265)
+										Choice(L("prefer_h265"), DecoderPref.h265)
 									])
 								}
 							}
-							CatTitle("During a Stream")
+							CatTitle(L("during_stream"))
 							CatList {
-								CatItem("Show Stream Stats") {
+								CatItem(L("show_stream_stats")) {
 									Toggle("", isOn: $settings.alwaysShowStatus)
 										.frame(width: 80)
 								}
-								CatItem("Show Menu Button") {
+								CatItem(L("show_menu_button")) {
 									Toggle("", isOn: Binding(get: { !settings.noOverlay }, set: { settings.noOverlay = !$0 }))
 										.frame(width: 80)
 								}
-								CatItem("Menu Edge Swipe") {
+								CatItem(L("menu_edge_swipe")) {
 									MultiPicker(selection: $settings.menuSwipeEdge, options:
 									[
-										Choice("Off", MenuSwipeEdge.off),
-										Choice("Left Edge", MenuSwipeEdge.left),
-										Choice("Right Edge", MenuSwipeEdge.right)
+										Choice(L("off"), MenuSwipeEdge.off),
+										Choice(L("left_edge"), MenuSwipeEdge.left),
+										Choice(L("right_edge"), MenuSwipeEdge.right)
 									])
 								}
-								CatItem(UIDevice.current.userInterfaceIdiom == .pad ? "Hide iPad Status Bar" : "Hide iPhone Status Bar") {
+								CatItem(UIDevice.current.userInterfaceIdiom == .pad ? L("hide_ipad_status_bar") : L("hide_iphone_status_bar")) {
 									Toggle("", isOn: $settings.hideStatusBar)
 										.frame(width: 80)
 								}
-								CatItem("Picture in Picture") {
+								CatItem(L("picture_in_picture")) {
 									Toggle("", isOn: $settings.enablePiP)
 										.frame(width: 80)
 								}
-								CatItem("Start Muted") {
+								CatItem(L("start_muted")) {
 									Toggle("", isOn: $settings.startMuted)
 										.frame(width: 80)
 								}
-								CatItem("Sync Clipboard") {
+								CatItem(L("sync_clipboard")) {
 									Toggle("", isOn: $settings.clipboardSync)
 										.frame(width: 80)
 								}
 							}
-							CatTitle("Developer")
+							CatTitle(L("developer"))
 							CatList {
-								CatItem("Auto Reconnect") {
+								CatItem(L("auto_reconnect")) {
 									Toggle("", isOn: $settings.autoReconnect)
 										.frame(width: 80)
 								}
 								if settings.autoReconnect {
-									CatItem("Show Reconnect Errors") {
+									CatItem(L("show_reconnect_errors")) {
 										Toggle("", isOn: $settings.errorPrompts)
 											.frame(width: 80)
 									}
 								}
-								CatItem("Show Connection Log") {
+								CatItem(L("show_connection_log")) {
 									Toggle("", isOn: $settings.showConnectionLog)
 										.frame(width: 80)
 								}
@@ -207,9 +214,9 @@ struct SettingsView: View {
 
 	func getVersionInfo() -> String {
 		let info = Bundle.main.infoDictionary
-		let version = info?["CFBundleShortVersionString"] as? String ?? "Unknown version"
-		let commit = info?["GitCommitInfo"] as? String ?? "Unknown commit"
-		return "Version \(version)-\(commit)"
+		let version = info?["CFBundleShortVersionString"] as? String ?? L("unknown_version")
+		let commit = info?["GitCommitInfo"] as? String ?? L("unknown_commit")
+		return String(format: L("version_info"), version, commit)
 	}
 }
 

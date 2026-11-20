@@ -41,6 +41,7 @@ class ParsecMetalRenderer: NSObject, MTKViewDelegate {
 	private var current = -1
 	private var frameSize = CGSize.zero
 	let updateImage: () -> Void
+	var displayMode: StreamDisplayMode = .fill
 
 	var device: MTLDevice { queue.device }
 
@@ -113,13 +114,15 @@ class ParsecMetalRenderer: NSObject, MTKViewDelegate {
 
 	func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) { }
 
+	private func syncClientFrame(_ view: MTKView) {
+		guard abs(view.frame.size.width - lastWidth) > 0.1 || abs(view.contentScaleFactor - lastScale) > 0.01 else { return }
+		CParsec.setFrame(view.frame.size.width, view.frame.size.height, view.contentScaleFactor)
+		lastWidth = view.frame.size.width
+		lastScale = view.contentScaleFactor
+	}
+
 	func draw(in view: MTKView) {
-		let deltaWidth: CGFloat = view.frame.size.width - lastWidth
-		if deltaWidth > 0.1 || deltaWidth < -0.1 || abs(view.contentScaleFactor - lastScale) > 0.01 {
-			CParsec.setFrame(view.frame.size.width, view.frame.size.height, view.contentScaleFactor)
-			lastWidth = view.frame.size.width
-			lastScale = view.contentScaleFactor
-		}
+		syncClientFrame(view)
 		let size = CGSize(width: (view.bounds.width * view.contentScaleFactor).rounded(), height: (view.bounds.height * view.contentScaleFactor).rounded())
 		if view.drawableSize != size {
 			view.drawableSize = size
@@ -148,11 +151,9 @@ class ParsecMetalRenderer: NSObject, MTKViewDelegate {
 			return
 		}
 		if current >= 0, let p = planes[current] {
-			let d = view.drawableSize
-			let s = min(d.width / frameSize.width, d.height / frameSize.height)
-			let w = frameSize.width * s
-			let h = frameSize.height * s
-			enc.setViewport(MTLViewport(originX: Double((d.width - w) / 2), originY: Double((d.height - h) / 2), width: Double(w), height: Double(h), znear: 0, zfar: 1))
+			let geometry = StreamGeometry(viewportSize: view.drawableSize, hostSize: frameSize, mode: displayMode)
+			let rect = geometry.contentRect
+			enc.setViewport(MTLViewport(originX: Double(rect.minX), originY: Double(rect.minY), width: Double(rect.width), height: Double(rect.height), znear: 0, zfar: 1))
 			enc.setRenderPipelineState(pipeline)
 			enc.setFragmentTexture(p.y, index: 0)
 			enc.setFragmentTexture(p.c, index: 1)

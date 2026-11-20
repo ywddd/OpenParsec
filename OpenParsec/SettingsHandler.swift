@@ -7,6 +7,7 @@ final class SettingsStore: ObservableObject {
 
 	private init() {
 		defaults.register(defaults: [
+			"streamDisplayMode": StreamDisplayMode.fill.rawValue,
 			"rendererChoice": RendererType.metal.rawValue,
 			"resolution": ParsecResolution.client.rawValue,
 			"bitrate": 0,
@@ -50,6 +51,11 @@ final class SettingsStore: ObservableObject {
 	var renderer: RendererType {
 		get { RendererType(rawValue: defaults.integer(forKey: "rendererChoice")) ?? .metal }
 		set { store(newValue.rawValue, "rendererChoice") }
+	}
+
+	var streamDisplayMode: StreamDisplayMode {
+		get { StreamDisplayMode(rawValue: defaults.integer(forKey: "streamDisplayMode")) ?? .fill }
+		set { store(newValue.rawValue, "streamDisplayMode") }
 	}
 
 	var resolution: ParsecResolution {
@@ -179,6 +185,7 @@ final class SettingsStore: ObservableObject {
 }
 
 struct SettingsHandler {
+	static var streamDisplayMode: StreamDisplayMode { get { SettingsStore.shared.streamDisplayMode } set { SettingsStore.shared.streamDisplayMode = newValue } }
 	static var renderer: RendererType { get { SettingsStore.shared.renderer } set { SettingsStore.shared.renderer = newValue } }
 	static var resolution: ParsecResolution { get { SettingsStore.shared.resolution } set { SettingsStore.shared.resolution = newValue } }
 	static var bitrate: Int { get { SettingsStore.shared.bitrate } set { SettingsStore.shared.bitrate = newValue } }

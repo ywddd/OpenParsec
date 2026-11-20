@@ -1,6 +1,21 @@
 import GLKit
 import ParsecSDK
 
+private let glPreRenderCallback: ParsecPreRenderCallback = { opaque in
+	guard let opaque = opaque else { return true }
+	let context = Unmanaged<ParsecGLViewportContext>.fromOpaque(opaque).takeUnretainedValue()
+	glViewport(GLsizei(context.x), GLsizei(context.y), GLsizei(context.width), GLsizei(context.height))
+	glScissor(GLsizei(context.x), GLsizei(context.y), GLsizei(context.width), GLsizei(context.height))
+	return true
+}
+
+final class ParsecGLViewportContext {
+	var x: Int = 0
+	var y: Int = 0
+	var width: Int = 0
+	var height: Int = 0
+}
+
 class ParsecGLKRenderer: NSObject, GLKViewDelegate, GLKViewControllerDelegate {
 	var glkView: GLKView
 	var glkViewController: GLKViewController
@@ -10,6 +25,8 @@ class ParsecGLKRenderer: NSObject, GLKViewDelegate, GLKViewControllerDelegate {
 
 	var lastImg: CGImage?
 	let updateImage: () -> Void
+	let viewportContext = ParsecGLViewportContext()
+	var displayMode: StreamDisplayMode = .fill
 
 	private var drawnFrames = 0
 	private var lastRateSample = CACurrentMediaTime()
@@ -34,18 +51,22 @@ class ParsecGLKRenderer: NSObject, GLKViewDelegate, GLKViewControllerDelegate {
 
 	func glkView(_ view: GLKView, drawIn rect: CGRect) {
 		if glkViewController.isPaused { return }
-		let deltaWidth: CGFloat = view.frame.size.width - lastWidth
-		if deltaWidth > 0.1 || deltaWidth < -0.1 || abs(view.contentScaleFactor - lastScale) > 0.01 {
-			CParsec.setFrame(view.frame.size.width, view.frame.size.height, view.contentScaleFactor)
-			lastWidth = view.frame.size.width
-			lastScale = view.contentScaleFactor
-		}
 
 		// timeout in ms: 16ms = ~60fps, 8ms = ~120fps
 		let fps = glkViewController.framesPerSecond > 0 ? glkViewController.framesPerSecond : 60
 		let timeout = UInt32(max(1000 / fps, 8)) // minimum 8ms for 120Hz
 
-		CParsec.renderGLFrame(timeout: timeout)
+		let geometry = StreamGeometry(
+			viewportSize: CGSize(width: view.drawableWidth, height: view.drawableHeight),
+			hostSize: CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight)),
+			mode: displayMode
+		)
+		let rect = geometry.contentRect
+		viewportContext.x = Int(rect.minX.rounded())
+		viewportContext.y = Int(rect.minY.rounded())
+		viewportContext.width = Int(rect.width.rounded())
+		viewportContext.height = Int(rect.height.rounded())
+		CParsec.renderGLFrame(timeout: timeout, preRender: glPreRenderCallback, opaque: Unmanaged.passUnretained(viewportContext).toOpaque())
 
 		drawnFrames += 1
 		let now = CACurrentMediaTime()

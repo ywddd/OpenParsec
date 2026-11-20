@@ -75,6 +75,10 @@ class ParsecGLKViewController: ParsecPlayground {
 
 	var renderView: UIView { glkView }
 
+	func setDisplayMode(_ mode: StreamDisplayMode) {
+		glkRenderer?.displayMode = mode
+	}
+
 	func cleanUp() {
 		guard let context = eaglContext else { return }
 		EAGLContext.setCurrent(context)
