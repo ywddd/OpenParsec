@@ -75,7 +75,8 @@ enum StreamViewportMath {
 		contentSize: CGSize,
 		viewportSize: CGSize,
 		minimumY: CGFloat = 0,
-		additionalBottomInset: CGFloat = 0
+		additionalBottomInset: CGFloat = 0,
+		visibleViewport: CGRect? = nil
 	) -> CGPoint {
 		let proposed = CGPoint(x: contentAnchor.x * zoomScale - point.x,
 							   y: contentAnchor.y * zoomScale - point.y)
@@ -84,7 +85,8 @@ enum StreamViewportMath {
 							 viewportSize: viewportSize,
 							 zoomScale: zoomScale,
 							 minimumY: minimumY,
-							 additionalBottomInset: additionalBottomInset)
+							 additionalBottomInset: additionalBottomInset,
+							 visibleViewport: visibleViewport)
 	}
 
 	static func clampedOffset(
@@ -93,9 +95,18 @@ enum StreamViewportMath {
 		viewportSize: CGSize,
 		zoomScale: CGFloat,
 		minimumY: CGFloat = 0,
-		additionalBottomInset: CGFloat = 0
+		additionalBottomInset: CGFloat = 0,
+		visibleViewport: CGRect? = nil
 	) -> CGPoint {
 		let scale = max(0, zoomScale)
+		if let visibleViewport {
+			let minimumX = -visibleViewport.minX
+			let minimumY = -visibleViewport.minY
+			let maximumX = max(minimumX, contentSize.width * scale - visibleViewport.maxX)
+			let maximumY = max(minimumY, contentSize.height * scale - visibleViewport.maxY)
+			return CGPoint(x: min(max(minimumX, proposed.x), maximumX),
+						   y: min(max(minimumY, proposed.y), maximumY))
+		}
 		let maxX = max(0, contentSize.width * scale - viewportSize.width)
 		let maxY = max(minimumY,
 					   contentSize.height * scale - viewportSize.height + max(0, additionalBottomInset))
@@ -110,7 +121,8 @@ enum StreamViewportMath {
 		viewportSize: CGSize,
 		zoomScale: CGFloat,
 		minimumY: CGFloat = 0,
-		additionalBottomInset: CGFloat = 0
+		additionalBottomInset: CGFloat = 0,
+		visibleViewport: CGRect? = nil
 	) -> CGPoint {
 		clampedOffset(CGPoint(x: startOffset.x - translation.x,
 							  y: startOffset.y - translation.y),
@@ -118,7 +130,14 @@ enum StreamViewportMath {
 					  viewportSize: viewportSize,
 					  zoomScale: zoomScale,
 					  minimumY: minimumY,
-					  additionalBottomInset: additionalBottomInset)
+					  additionalBottomInset: additionalBottomInset,
+					  visibleViewport: visibleViewport)
+	}
+
+	static func keyboardVisibleViewport(viewportSize: CGSize, keyboardHeight: CGFloat) -> CGRect {
+		CGRect(origin: .zero,
+			   size: CGSize(width: max(0, viewportSize.width),
+							height: max(0, viewportSize.height - max(0, keyboardHeight))))
 	}
 
 }

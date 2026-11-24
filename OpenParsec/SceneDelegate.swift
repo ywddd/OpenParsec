@@ -3,6 +3,19 @@ import SwiftUI
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 	var window: UIWindow?
+	private var streamOrientationMask: UIInterfaceOrientationMask?
+	private var requestedStreamOrientation: UIInterfaceOrientationMask?
+	private var orientationRequestGeneration = 0
+	private var restorePortraitPending = false
+	var onStreamOrientationChange: ((Bool) -> Void)?
+
+	var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+		streamOrientationMask ?? (UIDevice.current.userInterfaceIdiom == .pad ? .all : .allButUpsideDown)
+	}
+
+	var isStreamOrientationRequestPending: Bool {
+		requestedStreamOrientation != nil
+	}
 
 	func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
 		if connectionOptions.shortcutItem?.type == ParsecBackgroundManager.reconnectShortcut {
@@ -13,9 +26,92 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
 		if let windowScene = scene as? UIWindowScene {
 		    let window = UIWindow(windowScene: windowScene)
-		    window.rootViewController = UIHostingController(rootView: contentView)
+		    window.rootViewController = OpenParsecHostingController(rootView: contentView)
 		    self.window = window
 		    window.makeKeyAndVisible()
+		}
+	}
+
+	func requestStreamOrientation(isLandscape: Bool, onFailure: @escaping () -> Void) {
+		guard #available(iOS 16.0, *), let windowScene = window?.windowScene else {
+			onFailure()
+			return
+		}
+		guard !isStreamOrientationRequestPending else { return }
+
+		let requestedMask: UIInterfaceOrientationMask = isLandscape ? .landscape : .portrait
+		let previousMask = streamOrientationMask
+		orientationRequestGeneration += 1
+		let requestGeneration = orientationRequestGeneration
+		restorePortraitPending = false
+		streamOrientationMask = requestedMask
+		requestedStreamOrientation = requestedMask
+		window?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+		if requestedMask == currentOrientationMask(in: windowScene) {
+			requestedStreamOrientation = nil
+			onStreamOrientationChange?(windowScene.interfaceOrientation.isLandscape)
+			return
+		}
+		windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: requestedMask)) { [weak self] _ in
+			DispatchQueue.main.async {
+				guard let self = self,
+					  self.orientationRequestGeneration == requestGeneration,
+					  self.requestedStreamOrientation == requestedMask else { return }
+				self.streamOrientationMask = previousMask
+				self.requestedStreamOrientation = nil
+				self.window?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+				self.onStreamOrientationChange?(windowScene.interfaceOrientation.isLandscape)
+				onFailure()
+			}
+		}
+	}
+
+	func windowScene(_ windowScene: UIWindowScene, didUpdate previousCoordinateSpace: UICoordinateSpace, interfaceOrientation previousInterfaceOrientation: UIInterfaceOrientation, traitCollection: UITraitCollection) {
+		let currentOrientation = windowScene.interfaceOrientation
+		onStreamOrientationChange?(currentOrientation.isLandscape)
+		if restorePortraitPending {
+			guard currentOrientation != .portrait else { return }
+			if #available(iOS 16.0, *) {
+				windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) { _ in }
+			}
+			return
+		}
+		guard let requested = requestedStreamOrientation else { return }
+		let requestMatched = requested == .landscape
+			? currentOrientation.isLandscape
+			: currentOrientation == .portrait
+		guard requestMatched else { return }
+		requestedStreamOrientation = nil
+	}
+
+	private func currentOrientationMask(in windowScene: UIWindowScene) -> UIInterfaceOrientationMask {
+		switch windowScene.interfaceOrientation {
+		case .portrait: return .portrait
+		case .landscapeLeft, .landscapeRight: return .landscape
+		case .portraitUpsideDown: return .portraitUpsideDown
+		default: return UIDevice.current.userInterfaceIdiom == .pad ? .all : .allButUpsideDown
+		}
+	}
+
+	func restorePortraitAfterStream() {
+		let hadPendingRequest = isStreamOrientationRequestPending
+		orientationRequestGeneration += 1
+		let restoreGeneration = orientationRequestGeneration
+		restorePortraitPending = hadPendingRequest || window?.windowScene?.interfaceOrientation.isLandscape == true
+		streamOrientationMask = restorePortraitPending ? .portrait : nil
+		requestedStreamOrientation = nil
+		onStreamOrientationChange = nil
+		if #available(iOS 16.0, *) {
+			window?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+			window?.windowScene?.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) { _ in }
+		}
+		DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+			guard let self = self, self.orientationRequestGeneration == restoreGeneration else { return }
+			self.restorePortraitPending = false
+			self.streamOrientationMask = nil
+			if #available(iOS 16.0, *) {
+				self.window?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+			}
 		}
 	}
 
@@ -29,6 +125,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 	}
 
 	func sceneDidDisconnect(_ scene: UIScene) {
+		restorePortraitAfterStream()
 		if ParsecBackgroundManager.shared.hasActiveConnection {
 			CParsec.sendReleaseMessage()
 			CParsec.disconnect()
@@ -102,5 +199,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 			appNote("[background] picture in picture \(pipAttempted ? "starting" : "off"), stream \(pipAttempted ? "running" : "paused")")
 		}
 		ParsecBackgroundManager.shared.sceneDidEnterBackground()
+	}
+}
+
+private final class OpenParsecHostingController: UIHostingController<ContentView> {
+	override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+		(view.window?.windowScene?.delegate as? SceneDelegate)?.supportedInterfaceOrientations
+			?? (UIDevice.current.userInterfaceIdiom == .pad ? .all : .allButUpsideDown)
 	}
 }

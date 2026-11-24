@@ -110,7 +110,7 @@ struct ParsecStatusBar: View {
 				mgr.reconnectAttempts = 1
 				appNote("[reconnect] network back, reconnecting")
 				isReconnecting = true
-				parsecViewController?.resetKeyState()
+				parsecViewController?.releaseMobileInteractions()
 				CParsec.reconnect(peerId)
 				mgr.reconnectStartTime = Date()
 				return
@@ -205,7 +205,7 @@ struct ParsecStatusBar: View {
 					mgr.reconnectAttempts += 1
 					appNote("[reconnect] attempt \(mgr.reconnectAttempts) after status \(status.rawValue)\(setupFailure.map { ", sdk setup failed: \($0)" } ?? "")")
 					isReconnecting = true
-					parsecViewController?.resetKeyState()
+					parsecViewController?.releaseMobileInteractions()
 					CParsec.reconnect(peerId)
 					mgr.reconnectStartTime = Date()
 					return
@@ -309,6 +309,8 @@ struct ParsecView: View {
 	@AppStorage("menuSwipeHintShown") var menuSwipeHintShown: Bool = false
 
 	@State var showKeyboard: Bool = false
+	@State var keyboardActionInset: CGFloat = 0
+	@State var streamOrientationIsLandscape: Bool = false
 	@State var zoomEnabled: Bool = false
 	@State var viewOnly: Bool = false
 	@State var showFullDiagnostics: Bool = false
@@ -432,7 +434,7 @@ struct ParsecView: View {
 					.zIndex(3)
 			}
 
-			if !hideOverlay || showMenu {
+			if !hideOverlay || showMenu || showKeyboard {
 				streamControlPanel
 					.zIndex(2)
 			}
@@ -494,6 +496,7 @@ struct ParsecView: View {
 		}
 		.onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
 			DispatchQueue.main.async {
+				streamOrientationIsLandscape = parsecViewController.view.window?.windowScene?.interfaceOrientation.isLandscape ?? streamOrientationIsLandscape
 				guard SettingsHandler.streamDisplayMode == .adaptive else { return }
 				parsecViewController.requestAdaptiveResolutionIfNeeded()
 			}
@@ -507,6 +510,7 @@ struct ParsecView: View {
 			disconnect(isBackgroundDisconnect: true)
 		}
 		.edgesIgnoringSafeArea(.all)
+		.ignoresSafeArea(.keyboard, edges: .bottom)
 		.overlay(SettingsView(visible: $showSettings))
 
 	}
@@ -541,6 +545,10 @@ struct ParsecView: View {
 				isViewOnly: viewOnly,
 				isMuted: muted,
 				keyboardVisible: showKeyboard,
+				keyboardBottomInset: keyboardActionInset,
+				isOverlayHidden: hideOverlay,
+				streamOrientationIsLandscape: streamOrientationIsLandscape,
+				canRequestStreamOrientation: ProcessInfo.processInfo.isOperatingSystemAtLeast(OperatingSystemVersion(majorVersion: 16, minorVersion: 0, patchVersion: 0)),
 				isAdaptiveDisplay: settingsStore.streamDisplayMode == .adaptive,
 				isPinchZoomEnabled: zoomEnabled,
 				isConstantFps: dataModel.constantFps,
@@ -572,12 +580,13 @@ struct ParsecView: View {
 				rightClick: { rightClick() },
 				hideButtons: { disableOverlay() },
 				toggleKeyboard: { toggleKeyboard() },
+				toggleStreamOrientation: { toggleStreamOrientation() },
 				showDesktop: { sendSystemShortcut(.showDesktop) },
 				switchWindow: { sendSystemShortcut(.switchWindow) },
 				exit: { activeAlert = .exit }
 			)
 		)
-		.allowsHitTesting(!hideOverlay || showMenu)
+		.allowsHitTesting(!hideOverlay || showMenu || showKeyboard)
 	}
 
 	var overlayTitle: String {
@@ -697,6 +706,7 @@ struct ParsecView: View {
 		parsecViewController.requestAdaptiveResolutionIfNeeded()
 
 		ParsecView.getHostUserData()
+		streamOrientationIsLandscape = parsecViewController.view.window?.windowScene?.interfaceOrientation.isLandscape ?? false
 
 		hideOverlay = SettingsHandler.noOverlay
 		hideKeyboardButton = !SettingsHandler.showKeyboardButton
@@ -710,11 +720,19 @@ struct ParsecView: View {
 			restoreOverlay()
 			setPanelOpen(true)
 		}
+		let orientation = $streamOrientationIsLandscape
+		(parsecViewController.view.window?.windowScene?.delegate as? SceneDelegate)?.onStreamOrientationChange = { isLandscape in
+			orientation.wrappedValue = isLandscape
+		}
 
         let keyboardShown = $showKeyboard
         parsecViewController.onKeyboardVisibilityChanged = { visible in
             keyboardShown.wrappedValue = visible
         }
+		let keyboardInset = $keyboardActionInset
+		parsecViewController.onKeyboardHeightChanged = { height in
+			keyboardInset.wrappedValue = height
+		}
 		let hint = $hint
 		let panHintShown = $keyboardPanHintShown
 		parsecViewController.onKeyboardCoversPicture = {
@@ -803,7 +821,6 @@ struct ParsecView: View {
 		isReconnecting = true
 		ParsecBackgroundManager.shared.reconnectAttempts = 0
 		parsecViewController.releaseMobileInteractions()
-		parsecViewController.resetKeyState()
 		CParsec.reconnect(peerId)
 		ParsecBackgroundManager.shared.reconnectStartTime = Date()
 	}
@@ -901,6 +918,10 @@ struct ParsecView: View {
 	}*/
 
 	func disconnect(isBackgroundDisconnect: Bool = false) {
+		showKeyboard = false
+		parsecViewController.setKeyboardVisible(false)
+		(parsecViewController.view.window?.windowScene?.delegate as? SceneDelegate)?.restorePortraitAfterStream()
+		streamOrientationIsLandscape = false
 		parsecViewController.releaseMobileInteractions()
 		parsecViewController.setVirtualMouseSuspended(true)
 		appNote("[stream] disconnect\(isBackgroundDisconnect ? " in the background" : "")")
@@ -975,6 +996,23 @@ struct ParsecView: View {
 			if !showKeyboard { setPanelOpen(false) }
 			showKeyboard.toggle()
 			parsecViewController.setKeyboardVisible(showKeyboard)
+		}
+	}
+
+	func toggleStreamOrientation() {
+		guard #available(iOS 16.0, *),
+			  let sceneDelegate = parsecViewController.view.window?.windowScene?.delegate as? SceneDelegate else {
+			withAnimation { hint = L("stream_orientation_requires_ios16") }
+			return
+		}
+		guard !sceneDelegate.isStreamOrientationRequestPending else { return }
+		let requestedOrientation = !streamOrientationIsLandscape
+		let previousOrientation = streamOrientationIsLandscape
+		parsecViewController.prepareForStreamOrientationChange()
+		streamOrientationIsLandscape = requestedOrientation
+		sceneDelegate.requestStreamOrientation(isLandscape: requestedOrientation) {
+			streamOrientationIsLandscape = parsecViewController.view.window?.windowScene?.interfaceOrientation.isLandscape ?? previousOrientation
+			withAnimation { hint = L("stream_orientation_request_failed") }
 		}
 	}
 

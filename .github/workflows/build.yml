@@ -139,6 +139,29 @@ jobs:
           let pan = StreamViewportMath.pannedOffset(from: initialOffset, translation: CGPoint(x: 60, y: 100), contentSize: touchViewport, viewportSize: touchViewport, zoomScale: 2)
           near(pan.x, 60, "pan follows finger horizontally")
           near(pan.y, 140, "pan follows finger vertically")
+          let keyboardViewport = StreamViewportMath.keyboardVisibleViewport(viewportSize: CGSize(width: 874, height: 402), keyboardHeight: 260)
+          near(keyboardViewport.width, 874, "keyboard pan keeps full viewport width")
+          near(keyboardViewport.height, 142, "keyboard pan uses uncovered screen height")
+          let keyboardPanAtOneX = StreamViewportMath.pannedOffset(
+              from: .zero,
+              translation: CGPoint(x: -200, y: -200),
+              contentSize: CGSize(width: 874, height: 402),
+              viewportSize: CGSize(width: 874, height: 402),
+              zoomScale: 1,
+              visibleViewport: keyboardViewport
+          )
+          near(keyboardPanAtOneX.x, 0, "one-times keyboard pan remains horizontally clamped")
+          near(keyboardPanAtOneX.y, 200, "one-times keyboard pan reveals desktop above keyboard")
+          let keyboardPanAtTwoX = StreamViewportMath.pannedOffset(
+              from: .zero,
+              translation: CGPoint(x: -2000, y: -2000),
+              contentSize: CGSize(width: 874, height: 402),
+              viewportSize: CGSize(width: 874, height: 402),
+              zoomScale: 2,
+              visibleViewport: keyboardViewport
+          )
+          near(keyboardPanAtTwoX.x, 874, "two-times keyboard pan clamps horizontal edge")
+          near(keyboardPanAtTwoX.y, 662, "two-times keyboard pan clamps below visible viewport")
           let upper = StreamViewportMath.clampedOffset(CGPoint(x: 9999, y: 9999), contentSize: touchViewport, viewportSize: touchViewport, zoomScale: 2)
           near(upper.x, 400, "right edge clamp")
           near(upper.y, 800, "bottom edge clamp")
@@ -186,20 +209,30 @@ jobs:
           precondition(mouseButtons.cancelAll().released == [.right] && mouseButtons.held.isEmpty, "cancel releases remaining buttons")
           precondition(mouseButtons.cancelAll().released.isEmpty, "repeat cancel inert")
           for size in [CGSize(width: 393, height: 852), CGSize(width: 852, height: 393), CGSize(width: 375, height: 667)] {
-              for scale in [CGFloat(0.75), 1, 1.4] {
+              for scale in [VirtualMouseConfiguration.minimumScale, 1, VirtualMouseConfiguration.maximumScale] {
                   let configuration = VirtualMouseConfiguration(enabled: true, scale: scale, normalizedPosition: CGPoint(x: 0.8, y: 0.65))
                   let presentation = VirtualMouseGeometry.presentation(configuration: configuration, in: CGRect(origin: .zero, size: size), insets: VirtualMouseInsets(top: 8, left: 8, bottom: 34, right: 8), collapsed: false)
                   precondition(!presentation.isCollapsed, "phone screen fits an expanded mouse")
+                  precondition(presentation.bodyFrame.width >= 131.99 && presentation.bodyFrame.width <= 160.01, "mouse remains compact across supported sizes")
                   let layout = presentation.localizedToBody.layout!
                   precondition(layout.isValid && layout.isContainedInBody, "controls have safe hit regions")
                   precondition(layout.bodyFrame.origin == .zero, "drawing and hit testing use local origin")
                   precondition(VirtualMouseGeometry.interaction(at: CGPoint(x: layout.leftButtonFrame.midX, y: layout.leftButtonFrame.midY), layout: layout) == .button(.left), "local left hit")
                   precondition(VirtualMouseGeometry.interaction(at: CGPoint(x: layout.rightButtonFrame.midX, y: layout.rightButtonFrame.midY), layout: layout) == .button(.right), "local right hit")
-                  precondition(VirtualMouseGeometry.interaction(at: CGPoint(x: layout.resizeHandleFrame.midX, y: layout.resizeHandleFrame.midY), layout: layout) == .resize, "resize is reachable")
+                  precondition(VirtualMouseGeometry.interaction(at: CGPoint(x: layout.wheelFrame.midX, y: layout.wheelFrame.midY), layout: layout) == .wheel, "compact wheel hit")
+                  precondition(VirtualMouseGeometry.interaction(at: CGPoint(x: layout.collapseButtonFrame.midX, y: layout.collapseButtonFrame.midY), layout: layout) == .collapse, "compact collapse hit")
+                  precondition(VirtualMouseGeometry.interaction(at: CGPoint(x: layout.moveFrame.midX, y: layout.moveFrame.midY), layout: layout) == .move, "palm area moves pointer")
+                  precondition(layout.resizeHandleFrame.isEmpty && layout.middleButtonFrame.isEmpty, "obsolete resize and text controls are removed")
+                  precondition(VirtualMouseGeometry.contains(CGPoint(x: layout.bodyFrame.midX, y: layout.bodyFrame.midY), in: presentation.localizedToBody), "mouse body hit region is active")
+                  precondition(!VirtualMouseGeometry.contains(CGPoint(x: -1, y: -1), in: presentation.localizedToBody), "transparent area does not intercept touches")
               }
           }
+          var launcherDrag = VirtualMouseLauncherDrag(startPoint: CGPoint(x: 10, y: 10))
+          precondition(launcherDrag.move(to: CGPoint(x: 13, y: 13)) == .zero && !launcherDrag.isDragging, "collapsed mouse tap stays a tap")
+          precondition(launcherDrag.move(to: CGPoint(x: 30, y: 24)) == CGPoint(x: 20, y: 14) && launcherDrag.isDragging, "collapsed mouse starts moving after threshold")
+          precondition(launcherDrag.shouldExpand(at: CGPoint(x: 10, y: 10), cancelled: false) == false, "dragged launcher does not expand on lift")
           let compactMouse = VirtualMouseGeometry.presentation(configuration: VirtualMouseConfiguration(enabled: true, scale: 1, normalizedPosition: CGPoint(x: 1, y: 1)), in: CGRect(x: 0, y: 0, width: 393, height: 140), collapsed: false)
-          precondition(compactMouse.isCollapsed && compactMouse.bodyFrame.width == 44 && compactMouse.bodyFrame.height == 44, "keyboard constrained mouse stays recoverable")
+          precondition(compactMouse.isCollapsed && compactMouse.bodyFrame.width == 46 && compactMouse.bodyFrame.height == 46, "keyboard constrained mouse stays recoverable")
           print("Stream geometry, screenshot regression, SDK mapping and adaptive outcomes passed")
           '''
           with tempfile.TemporaryDirectory(prefix='openparsec-geometry-') as temporary:

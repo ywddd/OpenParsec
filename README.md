@@ -34,7 +34,7 @@ Touch modes can be set in Settings or the stream menu. Touchpad moves the cursor
 | 3-finger tap | On-screen keyboard |
 | Swipe in from the left edge | Stream menu, when the buttons are hidden |
 
-The stream screen's keyboard toolbar keeps keyboard, pointer/direct mode, and viewport reset in a compact 44-point action cluster. If **Show Keyboard Button** is off, that cluster is hidden; pointer/direct mode, viewport reset, right-click, text/key input mode, zoom, and display mode remain in the stream menu, and the keyboard can still be toggled with a three-finger tap. The first connection shows a one-time gesture hint. Disconnect remains outside the scrollable menu area on small screens.
+When the keyboard is visible, its shortcut accessory is only 44pt tall, with no empty spacer above it. A small action strip above the keyboard provides screen rotation, keyboard dismissal and stream actions. One- or two-finger drags on the uncovered desktop pan the viewport even at 1×; they do not send remote clicks or wheel events. Pinch zoom remains available when enabled. Dismissing the keyboard restores the previous zoom and viewport position. On iOS 16 and later, the rotation action requests landscape or portrait for the active stream and restores portrait when leaving it; other screens remain free to rotate. On iOS 14 and 15, the control reports that programmatic rotation requires iOS 16, while normal device rotation remains available. If **Show Keyboard Button** is off, keyboard actions remain available in the stream menu, and the keyboard can still be toggled with a three-finger tap. The first connection shows a one-time gesture hint. Disconnect remains outside the scrollable menu area on small screens.
 
 Direct mode semantics are explicit: at 1× a tap places and clicks the host pointer at that remote position; once zoomed, a one-finger drag pans the visible viewport instead of moving the pointer or dragging a remote item. Press and hold still holds the left button for file drags. Pinch to Zoom uses the saved preference and is off by default; enable it in Settings or the stream menu.
 
@@ -45,7 +45,7 @@ Hardware mice and keyboards are supported.
 
 右下角“操作”入口在竖屏展开底部面板、横屏展开右侧面板，保留声音、仅观看、画面复位、设置、键盘、显示桌面、窗口切换及退出。退出需要确认；仅观看阻止鼠标、滚轮、文字、键盘和手柄输入。
 
-虚拟鼠标有独立左/右/中键、滚轮与移动区。按住左键并滑动该手指，或用另一指滑动移动区，可拖动远端项目；抬起、取消、收起或离开串流释放按钮。顶端手柄只移动浮层位置，右下手柄调整大小，关闭按钮收起为可重新展开的圆形入口。操作面板展开期间暂时隐藏鼠标，避免控件覆盖；收起面板后恢复。
+虚拟鼠标改为默认约136×180pt的半透明鼠标轮廓，独立左右键、窄滚轮和掌托，不再放“左/右”等文字、巨大中键区或调尺寸手柄；尺寸在设置/操作面板中调整。按住左键并滑动该手指，或用另一指滑动掌托，可拖动远端项目；掌托同时移动指针和鼠标本体。抬起、取消、收起或离开串流释放按钮。关闭图标收起为46pt圆形入口，拖动可调整位置，轻点抬起才展开；透明四角不会遮挡或截获桌面触摸。键盘上方空间不足时暂时收起，键盘关闭后恢复；操作面板展开期间暂时隐藏鼠标，收起面板后恢复。
 
 窗口快捷键沿用设置中的主机粘贴平台选择：Windows 为 Win+D / Alt+Tab，macOS 为 Cmd+F3 / Cmd+Tab。本轮根据用户提供的 UU 截图和 RustDesk 公开交互设计独立用 Swift/UIKit 实现，不复制其源码或品牌素材。原生输入法、按住拖动及键盘/旋转布局仍需手机实测。
 

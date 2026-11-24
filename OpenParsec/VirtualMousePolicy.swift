@@ -32,8 +32,8 @@ struct VirtualMouseConfiguration: Equatable {
 
 	static let defaultScale: CGFloat = 1
 	static let defaultPosition = CGPoint(x: 0.8, y: 0.65)
-	static let minimumScale: CGFloat = 0.75
-	static let maximumScale: CGFloat = 1.4
+	static let minimumScale = VirtualMouseGeometry.minimumBodyWidth / VirtualMouseGeometry.baseBodySize.width
+	static let maximumScale = VirtualMouseGeometry.maximumBodyWidth / VirtualMouseGeometry.baseBodySize.width
 
 	init(enabled: Bool, scale: CGFloat, normalizedPosition: CGPoint) {
 		self.enabled = enabled
@@ -87,44 +87,37 @@ struct VirtualMouseLayout: Equatable {
 		let frames = [repositionHandleFrame, leftButtonFrame, rightButtonFrame,
 					  middleButtonFrame, wheelFrame, moveFrame,
 					  collapseButtonFrame, resizeHandleFrame]
-		return frames.allSatisfy { bodyFrame.contains($0) }
+		return frames.filter { !$0.isEmpty }.allSatisfy { bodyFrame.contains($0) }
 	}
 
 	var isValid: Bool {
-		let controls = [leftButtonFrame, rightButtonFrame, middleButtonFrame, wheelFrame]
-		let topControls = [repositionHandleFrame, collapseButtonFrame]
-		guard controls.allSatisfy({
+		let primaryControls = [leftButtonFrame, rightButtonFrame, moveFrame]
+		guard primaryControls.allSatisfy({
 			$0.width >= VirtualMouseGeometry.minimumButtonLength &&
 			$0.height >= VirtualMouseGeometry.minimumButtonLength
 		}) else { return false }
-		guard topControls.allSatisfy({
-			$0.width >= VirtualMouseGeometry.minimumButtonLength &&
-			$0.height >= VirtualMouseGeometry.minimumButtonLength
-		}) else { return false }
-		guard repositionHandleFrame.maxX <= collapseButtonFrame.minX else { return false }
-		guard resizeHandleFrame.minY >= (topControls.map(\.maxY).max() ?? 0) else { return false }
-		guard moveFrame.minY >= leftButtonFrame.maxY else { return false }
-		guard moveFrame.maxY <= bodyFrame.maxY + 0.5 else { return false }
-		let allControls = topControls + controls
-		guard !resizeHandleFrame.intersects(repositionHandleFrame),
-			  !resizeHandleFrame.intersects(collapseButtonFrame),
-			  !resizeHandleFrame.intersects(leftButtonFrame),
-			  !resizeHandleFrame.intersects(rightButtonFrame),
-			  !resizeHandleFrame.intersects(middleButtonFrame),
-			  !resizeHandleFrame.intersects(wheelFrame) else { return false }
-		guard resizeHandleFrame.intersects(moveFrame) else { return false }
-		for index in allControls.indices {
-			for other in allControls.indices where other > index {
-				if allControls[index].intersects(allControls[other]) { return false }
-			}
-		}
+		let controls = primaryControls + [wheelFrame, collapseButtonFrame]
+		guard bodyFrame.width <= VirtualMouseGeometry.maximumBodyWidth + 0.5,
+			  bodyFrame.width >= VirtualMouseGeometry.minimumBodyWidth - 0.5,
+			  collapseButtonFrame.width >= VirtualMouseGeometry.minimumButtonLength,
+			  collapseButtonFrame.height >= VirtualMouseGeometry.minimumButtonLength,
+			  controls.allSatisfy({ bodyFrame.contains($0) }),
+			  wheelFrame.width >= VirtualMouseGeometry.minimumWheelWidth,
+			  wheelFrame.height >= VirtualMouseGeometry.minimumButtonLength,
+			  !leftButtonFrame.intersects(rightButtonFrame),
+			  !leftButtonFrame.intersects(wheelFrame),
+			  !rightButtonFrame.intersects(wheelFrame),
+			  repositionHandleFrame.isEmpty,
+			  middleButtonFrame.isEmpty,
+			  resizeHandleFrame.isEmpty else { return false }
 		guard !moveFrame.intersects(leftButtonFrame),
 			  !moveFrame.intersects(rightButtonFrame),
-			  !moveFrame.intersects(middleButtonFrame),
 			  !moveFrame.intersects(wheelFrame),
-			  moveFrame.width >= VirtualMouseGeometry.minimumButtonLength,
-			  moveFrame.height >= VirtualMouseGeometry.minimumButtonLength else { return false }
-		return true
+			  !moveFrame.intersects(collapseButtonFrame),
+			  !collapseButtonFrame.intersects(leftButtonFrame),
+			  !collapseButtonFrame.intersects(rightButtonFrame),
+			  !collapseButtonFrame.intersects(wheelFrame) else { return false }
+		return isContainedInBody
 	}
 }
 
@@ -185,17 +178,50 @@ enum VirtualMouseLauncherGeometry {
 	}
 }
 
-enum VirtualMouseGeometry {
-	static let baseBodySize = CGSize(width: 240, height: 320)
-	static let collapsedSize: CGFloat = 44
-	static let minimumButtonLength: CGFloat = 44
-	static let padding: CGFloat = 6
-	static let gap: CGFloat = 6
+struct VirtualMouseLauncherDrag: Equatable {
+	static let movementThreshold: CGFloat = 8
+	let startPoint: CGPoint
+	private(set) var lastPoint: CGPoint
+	private(set) var isDragging = false
 
-	static let minimumExpandedScale = max(
-		(padding * 2 + minimumButtonLength * 2 + gap) / baseBodySize.width,
-		(padding * 2 + minimumButtonLength * 4 + gap * 3) / baseBodySize.height
-	)
+	init(startPoint: CGPoint) {
+		self.startPoint = startPoint
+		self.lastPoint = startPoint
+	}
+
+	mutating func move(to point: CGPoint) -> CGPoint {
+		let previousPoint = lastPoint
+		lastPoint = point
+		if !isDragging {
+			guard exceedsThreshold(at: point) else { return .zero }
+			isDragging = true
+			return CGPoint(x: point.x - startPoint.x, y: point.y - startPoint.y)
+		}
+		return CGPoint(x: point.x - previousPoint.x, y: point.y - previousPoint.y)
+	}
+
+	func shouldExpand(at point: CGPoint, cancelled: Bool) -> Bool {
+		!cancelled && !isDragging && !exceedsThreshold(at: point)
+	}
+
+	private func exceedsThreshold(at point: CGPoint) -> Bool {
+		let horizontal = point.x - startPoint.x
+		let vertical = point.y - startPoint.y
+		return horizontal * horizontal + vertical * vertical > Self.movementThreshold * Self.movementThreshold
+	}
+}
+
+enum VirtualMouseGeometry {
+	static let baseBodySize = CGSize(width: 136, height: 180)
+	static let minimumBodyWidth: CGFloat = 132
+	static let maximumBodyWidth: CGFloat = 160
+	static let collapsedSize: CGFloat = 46
+	static let minimumButtonLength: CGFloat = 44
+	static let minimumWheelWidth: CGFloat = 20
+	static let padding: CGFloat = 4
+	static let gap: CGFloat = 4
+
+	static let minimumExpandedScale = VirtualMouseConfiguration.minimumScale
 
 	static let minimumExpandedSize = CGSize(
 		width: baseBodySize.width * minimumExpandedScale,
@@ -248,59 +274,35 @@ enum VirtualMouseGeometry {
 	static func layout(bodyFrame: CGRect, scale: CGFloat) -> VirtualMouseLayout {
 		let padding = max(Self.padding, Self.padding * scale)
 		let gap = max(Self.gap, Self.gap * scale)
-		let topHeight = minimumButtonLength
-		let topY = bodyFrame.minY + padding
-		let topControlWidth = max(
-			minimumButtonLength,
-			min(64, (bodyFrame.width - padding * 2 - gap) / 2)
-		)
-		let reposition = CGRect(
-			x: bodyFrame.minX + padding,
-			y: topY,
-			width: topControlWidth,
-			height: topHeight
-		)
+		let wheelWidth = max(minimumWheelWidth, minimumWheelWidth * scale)
+		let buttonWidth = (bodyFrame.width - padding * 2 - gap * 2 - wheelWidth) / 2
+		let buttonBottom = bodyFrame.minY + bodyFrame.height * 0.6
+		let buttonTop = bodyFrame.minY + bodyFrame.height * 0.30
 		let collapse = CGRect(
-			x: bodyFrame.maxX - padding - topControlWidth,
-			y: topY,
-			width: topControlWidth,
-			height: topHeight
-		)
-		let buttonRowY = topY + topHeight + gap
-		let smallButtonWidth = max(
-			minimumButtonLength,
-			(bodyFrame.width - padding * 2 - gap * 2 - minimumButtonLength) / 2
-		)
-		let fixedHeight = padding * 2 + topHeight + gap * 3
-		let availableButtonHeight = bodyFrame.height - fixedHeight
-		let buttonHeight = max(minimumButtonLength,
-							   min(70, bodyFrame.height * 0.25, availableButtonHeight))
-		let left = CGRect(
-			x: bodyFrame.minX + padding,
-			y: buttonRowY,
-			width: smallButtonWidth,
-			height: buttonHeight
-		)
-		let right = CGRect(
-			x: bodyFrame.maxX - padding - smallButtonWidth,
-			y: buttonRowY,
-			width: smallButtonWidth,
-			height: buttonHeight
-		)
-		let middle = CGRect(
 			x: bodyFrame.midX - minimumButtonLength / 2,
-			y: buttonRowY,
+			y: bodyFrame.minY,
 			width: minimumButtonLength,
-			height: buttonHeight
-		)
-		let wheelY = left.maxY + gap
-		let wheel = CGRect(
-			x: bodyFrame.minX + padding,
-			y: wheelY,
-			width: max(0, bodyFrame.width - padding * 2),
 			height: minimumButtonLength
 		)
-		let moveY = wheel.maxY + gap
+		let left = CGRect(
+			x: bodyFrame.minX + padding,
+			y: buttonTop,
+			width: buttonWidth,
+			height: buttonBottom - buttonTop - padding
+		)
+		let right = CGRect(
+			x: bodyFrame.maxX - padding - buttonWidth,
+			y: left.minY,
+			width: buttonWidth,
+			height: left.height
+		)
+		let wheel = CGRect(
+			x: bodyFrame.midX - wheelWidth / 2,
+			y: bodyFrame.minY + max(padding, 48 * scale),
+			width: wheelWidth,
+			height: max(minimumButtonLength, 54 * scale)
+		)
+		let moveY = bodyFrame.minY + bodyFrame.height * 0.62
 		let move = CGRect(
 			x: bodyFrame.minX + padding,
 			y: moveY,
@@ -309,38 +311,91 @@ enum VirtualMouseGeometry {
 		)
 		return VirtualMouseLayout(
 			bodyFrame: bodyFrame,
-			repositionHandleFrame: reposition,
+			repositionHandleFrame: .null,
 			leftButtonFrame: left,
 			rightButtonFrame: right,
-			middleButtonFrame: middle,
+			middleButtonFrame: .null,
 			wheelFrame: wheel,
 			moveFrame: move,
 			collapseButtonFrame: collapse,
-			resizeHandleFrame: CGRect(
-				x: bodyFrame.maxX - padding - 44,
-				y: bodyFrame.maxY - padding - 44,
-				width: 44,
-				height: 44
-			)
+			resizeHandleFrame: .null
 		)
 	}
 
 	static func interaction(at point: CGPoint, layout: VirtualMouseLayout) -> VirtualMouseInteraction? {
+		guard bodyPath(in: layout.bodyFrame).contains(point) else { return nil }
+		if buttonPath(.left, layout: layout).contains(point) { return .button(.left) }
+		if buttonPath(.right, layout: layout).contains(point) { return .button(.right) }
+		if collapseGlyphFrame(layout: layout).contains(point) { return .collapse }
 		if layout.collapseButtonFrame.contains(point) { return .collapse }
-		if layout.repositionHandleFrame.contains(point) { return .reposition }
-		if layout.resizeHandleFrame.contains(point) { return .resize }
-		if layout.leftButtonFrame.contains(point) { return .button(.left) }
-		if layout.rightButtonFrame.contains(point) { return .button(.right) }
-		if layout.middleButtonFrame.contains(point) { return .button(.middle) }
 		if layout.wheelFrame.contains(point) { return .wheel }
-		if layout.moveFrame.contains(point) { return .move }
-		return nil
+		return .move
+	}
+
+	static func contains(_ point: CGPoint, in presentation: VirtualMousePresentation) -> Bool {
+		if presentation.isCollapsed {
+			return CGPath(ellipseIn: presentation.bodyFrame.insetBy(dx: 0.5, dy: 0.5), transform: nil).contains(point)
+		}
+		guard let layout = presentation.layout else { return false }
+		return bodyPath(in: presentation.bodyFrame).contains(point)
+	}
+
+	static func bodyPath(in frame: CGRect) -> CGPath {
+		let outline = frame.insetBy(dx: 1.5, dy: 1.5)
+		func point(_ horizontal: CGFloat, _ vertical: CGFloat) -> CGPoint {
+			CGPoint(x: outline.minX + outline.width * horizontal,
+					y: outline.minY + outline.height * vertical)
+		}
+		let path = CGMutablePath()
+		path.move(to: point(0.5, 0))
+		path.addCurve(to: point(0.025, 0.25), control1: point(0.25, 0), control2: point(0.025, 0.08))
+		path.addCurve(to: point(0.5, 1), control1: point(0.025, 0.62), control2: point(0.22, 1))
+		path.addCurve(to: point(0.975, 0.25), control1: point(0.78, 1), control2: point(0.975, 0.62))
+		path.addCurve(to: point(0.5, 0), control1: point(0.975, 0.08), control2: point(0.75, 0))
+		path.closeSubpath()
+		return path
+	}
+
+	static func buttonPath(_ button: VirtualMouseButton, layout: VirtualMouseLayout) -> CGPath {
+		let path = CGMutablePath()
+		guard button != .middle else { return path }
+		let frame = button == .left ? layout.leftButtonFrame : layout.rightButtonFrame
+		let innerX = button == .left ? frame.maxX : frame.minX
+		let outerX = button == .left ? frame.minX : frame.maxX
+		path.move(to: CGPoint(x: innerX, y: frame.minY))
+		path.addLine(to: CGPoint(x: innerX, y: frame.maxY - 8))
+		path.addCurve(
+			to: CGPoint(x: outerX, y: frame.maxY - 14),
+			control1: CGPoint(x: innerX, y: frame.maxY + 2),
+			control2: CGPoint(x: outerX, y: frame.maxY - 4)
+		)
+		path.addLine(to: CGPoint(x: outerX, y: frame.minY))
+		path.closeSubpath()
+		return path
+	}
+
+	static func wheelTrackFrame(layout: VirtualMouseLayout) -> CGRect {
+		layout.wheelFrame.insetBy(dx: layout.wheelFrame.width * 0.2, dy: 4)
+	}
+
+	static func collapseGlyphFrame(layout: VirtualMouseLayout) -> CGRect {
+		CGRect(x: layout.collapseButtonFrame.midX - 14, y: layout.collapseButtonFrame.midY - 14,
+			   width: 28, height: 28)
+	}
+
+	static func movedPosition(for bodyFrame: CGRect, by delta: CGPoint,
+							  in usableRect: CGRect, insets: VirtualMouseInsets = .zero) -> CGPoint {
+		let bounds = safeBounds(usableRect, insets: insets)
+		let horizontalSpan = max(0, bounds.width - bodyFrame.width)
+		let verticalSpan = max(0, bounds.height - bodyFrame.height)
+		return CGPoint(
+			x: horizontalSpan > 0 ? unit((bodyFrame.minX + delta.x - bounds.minX) / horizontalSpan) : 0,
+			y: verticalSpan > 0 ? unit((bodyFrame.minY + delta.y - bounds.minY) / verticalSpan) : 0
+		)
 	}
 
 	static func fittedScale(_ requested: CGFloat, in usableRect: CGRect) -> CGFloat {
-		let requestedScale = requested.isFinite ? requested : VirtualMouseConfiguration.defaultScale
-		let scale = min(max(VirtualMouseConfiguration.minimumScale, requestedScale),
-						VirtualMouseConfiguration.maximumScale)
+		let scale = VirtualMouseConfiguration.clampedScale(requested)
 		return min(scale,
 				   min(usableRect.width / baseBodySize.width,
 					   usableRect.height / baseBodySize.height))
@@ -350,15 +405,8 @@ enum VirtualMouseGeometry {
 		let maxScale = min(usableRect.width / baseBodySize.width,
 						   usableRect.height / baseBodySize.height)
 		guard maxScale >= minimumExpandedScale else { return false }
-		guard maxScale >= VirtualMouseConfiguration.minimumScale else { return false }
-		let scaledGate = usableRect.width >= minimumExpandedSize.width &&
-			usableRect.height >= minimumExpandedSize.height
-		let probe = CGSize(width: baseBodySize.width * maxScale,
-						   height: baseBodySize.height * maxScale)
-		return scaledGate && layout(
-			bodyFrame: CGRect(origin: .zero, size: probe),
-			scale: maxScale
-		).isValid
+		return usableRect.width >= minimumExpandedSize.width &&
+			usableRect.height >= baseBodySize.height * VirtualMouseConfiguration.minimumScale
 	}
 
 	private static func collapsedFrame(normalizedPosition: CGPoint, in usableRect: CGRect) -> CGRect {

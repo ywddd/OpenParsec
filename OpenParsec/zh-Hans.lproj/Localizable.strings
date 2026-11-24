@@ -222,4 +222,9 @@
 "stream_full_diagnostics" = "完整诊断";
 "stream_orientation_landscape" = "横屏";
 "stream_orientation_portrait" = "竖屏";
+"stream_rotate_landscape" = "切换到横屏";
+"stream_rotate_portrait" = "切换到竖屏";
+"stream_orientation_requires_ios16" = "旋转需 iOS 16";
+"stream_orientation_request_failed" = "系统未能切换屏幕方向，请重试。";
+"stream_keyboard_hide" = "收起键盘";
 "stream_unavailable_feature" = "此版本暂未提供该功能。";

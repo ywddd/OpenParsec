@@ -21,6 +21,7 @@ struct StreamControlActions {
 	var rightClick: () -> Void
 	var hideButtons: () -> Void
 	var toggleKeyboard: () -> Void
+	var toggleStreamOrientation: () -> Void
 	var showDesktop: () -> Void
 	var switchWindow: () -> Void
 	var exit: () -> Void
@@ -31,6 +32,10 @@ struct StreamControlState {
 	var isViewOnly: Bool
 	var isMuted: Bool
 	var keyboardVisible: Bool
+	var keyboardBottomInset: CGFloat
+	var isOverlayHidden: Bool
+	var streamOrientationIsLandscape: Bool
+	var canRequestStreamOrientation: Bool
 	var isAdaptiveDisplay: Bool
 	var isPinchZoomEnabled: Bool
 	var isConstantFps: Bool
@@ -55,19 +60,22 @@ struct StreamControlPanel: View {
 	let bitrates: [Int]
 	let state: StreamControlState
 	let actions: StreamControlActions
-	@State private var keyboardBottomInset: CGFloat = 0
 
 	var body: some View {
 		GeometryReader { proxy in
 			let safe = proxy.safeAreaInsets
 			let isLandscape = proxy.size.width > proxy.size.height
-			let bottomInset = max(safe.bottom, keyboardBottomInset)
+			let bottomInset = max(safe.bottom, state.keyboardBottomInset)
 			let available = CGSize(
 				width: max(1, proxy.size.width - safe.leading - safe.trailing),
 				height: max(1, proxy.size.height - safe.top - bottomInset)
 			)
 			Group {
-				if isLandscape {
+				if state.keyboardVisible && (!state.isOverlayHidden || state.isOpen) {
+					keyboardActionCapsule(in: proxy, safe: safe, bottomInset: bottomInset)
+				} else if state.keyboardVisible {
+					collapsedKeyboardControl(in: proxy, safe: safe, bottomInset: bottomInset)
+				} else if isLandscape {
 					landscapeLayout(available: available, safe: safe, bottom: bottomInset)
 				} else {
 					portraitLayout(available: available, safe: safe, bottomInset: bottomInset)
@@ -76,13 +84,36 @@ struct StreamControlPanel: View {
 			.frame(width: proxy.size.width, height: proxy.size.height, alignment: .bottomTrailing)
 		}
 		.ignoresSafeArea(.container, edges: .all)
-		.onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { note in
-			guard let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue else { return }
-			keyboardBottomInset = max(0, UIScreen.main.bounds.maxY - frame.minY)
+	}
+
+	private func keyboardActionCapsule(in proxy: GeometryProxy, safe: EdgeInsets, bottomInset: CGFloat) -> some View {
+		HStack(spacing: 2) {
+			compactIcon("rotate.right", label: orientationButtonTitle, action: actions.toggleStreamOrientation)
+			compactIcon("keyboard", label: L("stream_keyboard_hide"), action: actions.toggleKeyboard)
+			compactIcon("slider.horizontal.3", label: L("stream_actions_show"), action: { actions.setOpen(true) })
 		}
-		.onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-			keyboardBottomInset = 0
+		.padding(4)
+		.background(panelBackground)
+		.fixedSize()
+		.position(x: proxy.size.width - safe.trailing - 72,
+				  y: max(safe.top + 28, proxy.size.height - bottomInset - 36))
+	}
+
+	private func collapsedKeyboardControl(in proxy: GeometryProxy, safe: EdgeInsets, bottomInset: CGFloat) -> some View {
+		HStack(spacing: 6) {
+			compactIcon("rotate.right", label: orientationButtonTitle, action: actions.toggleStreamOrientation)
+			compactIcon("keyboard", label: L("stream_keyboard_hide"), action: actions.toggleKeyboard)
 		}
+		.padding(4)
+		.background(panelBackground)
+		.fixedSize()
+		.position(x: proxy.size.width - safe.trailing - 52,
+				  y: max(safe.top + 28, proxy.size.height - bottomInset - 36))
+	}
+
+	private var orientationButtonTitle: String {
+		guard state.canRequestStreamOrientation else { return L("stream_orientation_requires_ios16") }
+		return L(state.streamOrientationIsLandscape ? "stream_rotate_portrait" : "stream_rotate_landscape")
 	}
 
 	private func landscapeLayout(available: CGSize, safe: EdgeInsets, bottom: CGFloat) -> some View {
@@ -120,17 +151,20 @@ struct StreamControlPanel: View {
 	}
 
 	private var collapsedButton: some View {
-		Button {
-			withAnimation(.easeInOut(duration: 0.2)) { actions.setOpen(true) }
-		} label: {
-			Image(systemName: "slider.horizontal.3")
-				.font(.system(size: 20, weight: .semibold))
-				.foregroundColor(.white)
-				.frame(width: 48, height: 48)
-				.background(Circle().fill(Color.black.opacity(0.58)))
-				.overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 1))
+		HStack(spacing: 6) {
+			compactIcon("rotate.right", label: orientationButtonTitle, action: actions.toggleStreamOrientation)
+			Button {
+				withAnimation(.easeInOut(duration: 0.2)) { actions.setOpen(true) }
+			} label: {
+				Image(systemName: "slider.horizontal.3")
+					.font(.system(size: 20, weight: .semibold))
+					.foregroundColor(.white)
+					.frame(width: 48, height: 48)
+					.background(Circle().fill(Color.black.opacity(0.58)))
+					.overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 1))
+			}
+			.accessibilityLabel(L("stream_actions_show"))
 		}
-		.accessibilityLabel(L("stream_actions_show"))
 	}
 
 	private var landscapeDock: some View {
@@ -279,6 +313,7 @@ struct StreamControlPanel: View {
 
 			sectionTitle(L("stream_view_controls"))
 			VStack(spacing: 2) {
+				controlRow(icon: "rotate.right", title: orientationButtonTitle, action: actions.toggleStreamOrientation)
 				controlRow(
 					icon: "rectangle.inset.filled",
 					title: String(format: L("display_mode_state"), L(state.isAdaptiveDisplay ? "display_fill" : "display_fit")),
@@ -524,6 +559,16 @@ struct StreamControlPanel: View {
 				.foregroundColor(active ? Color("AccentColor") : .white)
 				.frame(width: 44, height: 44)
 				.background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(active ? 0.16 : 0.06)))
+		}
+		.accessibilityLabel(label)
+	}
+
+	private func compactIcon(_ systemName: String, label: String, action: @escaping () -> Void) -> some View {
+		Button(action: action) {
+			Image(systemName: systemName)
+				.font(.system(size: 17, weight: .medium))
+				.foregroundColor(.white)
+				.frame(width: 44, height: 44)
 		}
 		.accessibilityLabel(label)
 	}
