@@ -25,8 +25,7 @@ class CursorPositionHelper {
 	private static var geometry: StreamGeometry {
 		StreamGeometry(
 			viewportSize: CGSize(width: CGFloat(CParsec.clientWidth), height: CGFloat(CParsec.clientHeight)),
-			hostSize: CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight)),
-			mode: SettingsHandler.streamDisplayMode
+			hostSize: CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight))
 		)
 	}
 
@@ -46,6 +45,8 @@ class CursorPositionHelper {
 class SharedModel: ObservableObject {
 	@Published var resolutionX = 0
 	@Published var resolutionY = 0
+	@Published var adaptiveResolution: AdaptiveHostResolution?
+	@Published var adaptiveResolutionPaused = false
 	@Published var bitrate = 0
 	@Published var hostDefaultBitrate = 0
 	@Published var constantFps = false
@@ -56,6 +57,8 @@ class SharedModel: ObservableObject {
 	func reset() {
 		resolutionX = 0
 		resolutionY = 0
+		adaptiveResolution = nil
+		adaptiveResolutionPaused = false
 		bitrate = 0
 		hostDefaultBitrate = 0
 		constantFps = false

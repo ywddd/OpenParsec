@@ -106,8 +106,8 @@
 "codec" = "编码";
 "prefer_h265" = "优先使用 H.265";
 "display_mode" = "画面模式";
-"display_fill" = "铺满";
-"display_fit" = "完整画面";
+"display_fill" = "自适应";
+"display_fit" = "原始画面";
 "display_mode_state" = "画面模式：%@";
 "during_stream" = "串流期间";
 "show_stream_stats" = "显示串流状态";

@@ -1,14 +1,52 @@
 import CoreGraphics
+import UIKit
 
 enum StreamDisplayMode: Int {
-	case fill = 0
-	case fit = 1
+	case adaptive = 0
+	case original = 1
+}
+
+struct AdaptiveHostResolution: Equatable {
+	let width: Int
+	let height: Int
+
+	static func target(for viewportSize: CGSize) -> AdaptiveHostResolution? {
+		guard viewportSize.width > viewportSize.height, viewportSize.height > 0 else { return nil }
+		let scale = UIScreen.main.nativeScale
+		let screenWidth = Int((viewportSize.width * scale).rounded())
+		let screenHeight = Int((viewportSize.height * scale).rounded())
+		guard screenWidth > screenHeight else { return nil }
+
+		let maxWidth = even(min(1920, screenWidth))
+		let maxHeight = even(min(1080, screenHeight))
+		guard maxWidth >= 640, maxHeight >= 360 else { return nil }
+
+		let widthAtHeightLimit = even((maxHeight * screenWidth) / screenHeight)
+		if widthAtHeightLimit > 0 && widthAtHeightLimit <= maxWidth {
+			return AdaptiveHostResolution(width: widthAtHeightLimit, height: maxHeight)
+		}
+		let heightAtWidthLimit = even((maxWidth * screenHeight) / screenWidth)
+		guard heightAtWidthLimit > 0 else { return nil }
+		return AdaptiveHostResolution(width: maxWidth, height: heightAtWidthLimit)
+	}
+
+	static func currentViewportSize(preferring size: CGSize) -> CGSize {
+		if size.width > 0, size.height > 0 { return size }
+		let window = UIApplication.shared.connectedScenes
+			.compactMap { $0 as? UIWindowScene }
+			.flatMap { $0.windows }
+			.first { $0.isKeyWindow }
+		return window?.bounds.size ?? UIScreen.main.bounds.size
+	}
+
+	private static func even(_ value: Int) -> Int {
+		max(0, value - value % 2)
+	}
 }
 
 struct StreamGeometry {
 	let viewportSize: CGSize
 	let hostSize: CGSize
-	let mode: StreamDisplayMode
 
 	var validSize: Bool {
 		guard hostSize.width > 0, hostSize.height > 0,
@@ -16,29 +54,17 @@ struct StreamGeometry {
 		return true
 	}
 
-	var horizontalScale: CGFloat {
-		guard validSize else { return 1 }
-		return viewportSize.width / hostSize.width
-	}
-
-	var verticalScale: CGFloat {
-		guard validSize else { return 1 }
-		return viewportSize.height / hostSize.height
-	}
-
 	var scale: CGFloat {
 		guard validSize else { return 1 }
-		return mode == .fill ? horizontalScale : min(horizontalScale, verticalScale)
+		return min(viewportSize.width / hostSize.width, viewportSize.height / hostSize.height)
 	}
+
+	var horizontalScale: CGFloat { scale }
+	var verticalScale: CGFloat { scale }
 
 	var contentSize: CGSize {
 		guard validSize else { return viewportSize }
-		switch mode {
-		case .fill:
-			return viewportSize
-		case .fit:
-			return CGSize(width: hostSize.width * scale, height: hostSize.height * scale)
-		}
+		return CGSize(width: hostSize.width * scale, height: hostSize.height * scale)
 	}
 
 	var contentOffset: CGPoint {
@@ -51,29 +77,22 @@ struct StreamGeometry {
 	}
 
 	var scrollOffset: CGPoint {
-		switch mode {
-		case .fill:
-			return .zero
-		case .fit:
-			return CGPoint(x: max(0, contentOffset.x), y: max(0, contentOffset.y))
-		}
+		CGPoint(x: max(0, contentOffset.x), y: max(0, contentOffset.y))
 	}
 
 	var visibleHostRect: CGRect {
-		guard horizontalScale > 0, verticalScale > 0 else { return CGRect(origin: .zero, size: hostSize) }
-		return CGRect(x: scrollOffset.x / horizontalScale,
-					  y: scrollOffset.y / verticalScale,
-					  width: viewportSize.width / horizontalScale,
-					  height: viewportSize.height / verticalScale)
+		guard scale > 0 else { return CGRect(origin: .zero, size: hostSize) }
+		return CGRect(x: scrollOffset.x / scale,
+					  y: scrollOffset.y / scale,
+					  width: viewportSize.width / scale,
+					  height: viewportSize.height / scale)
 	}
 
 	func screenPoint(forHostPoint point: CGPoint) -> CGPoint {
-		CGPoint(x: point.x * horizontalScale,
-				y: point.y * verticalScale)
+		CGPoint(x: point.x * scale, y: point.y * scale)
 	}
 
 	func hostPoint(forScreenPoint point: CGPoint) -> CGPoint {
-		CGPoint(x: point.x / horizontalScale,
-				y: point.y / verticalScale)
+		CGPoint(x: point.x / scale, y: point.y / scale)
 	}
 }

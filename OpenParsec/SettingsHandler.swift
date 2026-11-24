@@ -7,7 +7,7 @@ final class SettingsStore: ObservableObject {
 
 	private init() {
 		defaults.register(defaults: [
-			"streamDisplayMode": StreamDisplayMode.fill.rawValue,
+			"streamDisplayMode": StreamDisplayMode.adaptive.rawValue,
 			"rendererChoice": RendererType.metal.rawValue,
 			"resolution": ParsecResolution.client.rawValue,
 			"bitrate": 0,
@@ -54,7 +54,7 @@ final class SettingsStore: ObservableObject {
 	}
 
 	var streamDisplayMode: StreamDisplayMode {
-		get { StreamDisplayMode(rawValue: defaults.integer(forKey: "streamDisplayMode")) ?? .fill }
+		get { StreamDisplayMode(rawValue: defaults.integer(forKey: "streamDisplayMode")) ?? .adaptive }
 		set { store(newValue.rawValue, "streamDisplayMode") }
 	}
 

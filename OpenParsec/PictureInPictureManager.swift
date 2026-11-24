@@ -231,8 +231,7 @@ class PictureInPictureManager: NSObject {
 		let geometry = StreamGeometry(
 			viewportSize: CGSize(width: CGFloat(viewWidth), height: CGFloat(viewHeight)),
 			hostSize: CGSize(width: CGFloat(lastValidStreamWidth > 0 ? lastValidStreamWidth : viewWidth),
-							 height: CGFloat(lastValidStreamHeight > 0 ? lastValidStreamHeight : viewHeight)),
-			mode: SettingsHandler.streamDisplayMode
+							 height: CGFloat(lastValidStreamHeight > 0 ? lastValidStreamHeight : viewHeight))
 		)
 		let visible = geometry.visibleHostRect.intersection(CGRect(x: 0, y: 0, width: geometry.hostSize.width, height: geometry.hostSize.height))
 		let minX = visible.minX * geometry.horizontalScale

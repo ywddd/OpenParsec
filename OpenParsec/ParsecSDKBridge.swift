@@ -111,7 +111,7 @@ class ParsecSDKBridge: ParsecService {
 
 	public var clientWidth: Float = 1920
 	public var clientHeight: Float = 1080
-	var displayMode: StreamDisplayMode = .fill
+	var displayMode: StreamDisplayMode = .adaptive
 	private var hasFrame = false
 	private var didSetDimensions = false
 
@@ -211,6 +211,16 @@ class ParsecSDKBridge: ParsecService {
 		let status = ParsecClientConnect(_parsec, &parsecClientCfg, NetworkHandler.clinfo?.session_id, peerID)
 
 		if status == PARSEC_OK || status == PARSEC_CONNECTING {
+			if self.displayMode == .adaptive,
+			   !DataManager.model.adaptiveResolutionPaused,
+			   SettingsHandler.resolution == .client,
+			   let target = AdaptiveHostResolution.target(for: AdaptiveHostResolution.currentViewportSize(preferring: .zero)) {
+				DispatchQueue.main.async {
+					DataManager.model.adaptiveResolution = target
+					DataManager.model.resolutionX = target.width
+					DataManager.model.resolutionY = target.height
+				}
+			}
 			ParsecBackgroundManager.shared.connectionDidStart()
 		}
 
@@ -304,9 +314,9 @@ class ParsecSDKBridge: ParsecService {
 			mouseInfo.mouseY = Int32(height / 2)
 			return
 		}
-		let geometry = StreamGeometry(viewportSize: oldSize, hostSize: CGSize(width: CGFloat(hostWidth), height: CGFloat(hostHeight)), mode: displayMode)
+		let geometry = StreamGeometry(viewportSize: oldSize, hostSize: CGSize(width: CGFloat(hostWidth), height: CGFloat(hostHeight)))
 		let hostPoint = geometry.hostPoint(forScreenPoint: CGPoint(x: CGFloat(mouseInfo.mouseX), y: CGFloat(mouseInfo.mouseY)))
-		let newGeometry = StreamGeometry(viewportSize: CGSize(width: width, height: height), hostSize: CGSize(width: CGFloat(hostWidth), height: CGFloat(hostHeight)), mode: displayMode)
+		let newGeometry = StreamGeometry(viewportSize: CGSize(width: width, height: height), hostSize: CGSize(width: CGFloat(hostWidth), height: CGFloat(hostHeight)))
 		let moved = newGeometry.screenPoint(forHostPoint: hostPoint)
 		mouseInfo.mouseX = ParsecSDKBridge.clamp(Int32(moved.x.rounded()), minValue: 0, maxValue: Int32(width))
 		mouseInfo.mouseY = ParsecSDKBridge.clamp(Int32(moved.y.rounded()), minValue: 0, maxValue: Int32(height))
@@ -384,8 +394,16 @@ class ParsecSDKBridge: ParsecService {
 						if DataManager.model.hostDefaultBitrate == 0 {
 							DataManager.model.hostDefaultBitrate = DataManager.model.bitrate
 						}
-						DataManager.model.resolutionX = SettingsHandler.resolution.width
-						DataManager.model.resolutionY = SettingsHandler.resolution.height
+						if self.displayMode == .adaptive,
+						   !DataManager.model.adaptiveResolutionPaused,
+						   SettingsHandler.resolution == .client,
+						   let target = DataManager.model.adaptiveResolution {
+							DataManager.model.resolutionX = target.width
+							DataManager.model.resolutionY = target.height
+						} else {
+							DataManager.model.resolutionX = SettingsHandler.resolution.width
+							DataManager.model.resolutionY = SettingsHandler.resolution.height
+						}
 						DataManager.model.constantFps = SettingsHandler.constantFps
 						if SettingsHandler.bitrate > 0 {
 							DataManager.model.bitrate = SettingsHandler.bitrate
@@ -427,7 +445,7 @@ class ParsecSDKBridge: ParsecService {
 		let isEcho = CACurrentMediaTime() - lastMoveSent < 0.3
 		let settling = CACurrentMediaTime() - dimsSetAt < 1
 		// a report at the picture's top left corner carries no position
-		let geometry = StreamGeometry(viewportSize: CGSize(width: CGFloat(clientWidth), height: CGFloat(clientHeight)), hostSize: CGSize(width: CGFloat(hostWidth), height: CGFloat(hostHeight)), mode: displayMode)
+		let geometry = StreamGeometry(viewportSize: CGSize(width: CGFloat(clientWidth), height: CGFloat(clientHeight)), hostSize: CGSize(width: CGFloat(hostWidth), height: CGFloat(hostHeight)))
 		let origin = geometry.screenPoint(forHostPoint: .zero)
 		let atOrigin = abs(Float(event.cursor.positionX) - Float(origin.x)) < 1 && abs(Float(event.cursor.positionY) - Float(origin.y)) < 1
 		if didSetDimensions && !settling && !atOrigin && (prevHidden || prevRelative || !isEcho) && !event.cursor.relative && !event.cursor.hidden {

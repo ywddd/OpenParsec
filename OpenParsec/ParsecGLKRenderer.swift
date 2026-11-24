@@ -26,7 +26,6 @@ class ParsecGLKRenderer: NSObject, GLKViewDelegate, GLKViewControllerDelegate {
 	var lastImg: CGImage?
 	let updateImage: () -> Void
 	let viewportContext = ParsecGLViewportContext()
-	var displayMode: StreamDisplayMode = .fill
 
 	private var drawnFrames = 0
 	private var lastRateSample = CACurrentMediaTime()
@@ -58,20 +57,14 @@ class ParsecGLKRenderer: NSObject, GLKViewDelegate, GLKViewControllerDelegate {
 
 		viewportContext.x = 0
 		viewportContext.y = 0
-		if displayMode == .fill {
-			viewportContext.width = Int(view.drawableWidth)
-			viewportContext.height = Int(view.drawableHeight)
-		} else {
-			let geometry = StreamGeometry(
-				viewportSize: CGSize(width: view.drawableWidth, height: view.drawableHeight),
-				hostSize: CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight)),
-				mode: .fit
-			)
-			viewportContext.x = Int(((CGFloat(view.drawableWidth) - geometry.contentSize.width) / 2).rounded())
-			viewportContext.y = Int(((CGFloat(view.drawableHeight) - geometry.contentSize.height) / 2).rounded())
-			viewportContext.width = Int(geometry.contentSize.width.rounded())
-			viewportContext.height = Int(geometry.contentSize.height.rounded())
-		}
+		let geometry = StreamGeometry(
+			viewportSize: CGSize(width: view.drawableWidth, height: view.drawableHeight),
+			hostSize: CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight))
+		)
+		viewportContext.x = Int(((CGFloat(view.drawableWidth) - geometry.contentSize.width) / 2).rounded())
+		viewportContext.y = Int(((CGFloat(view.drawableHeight) - geometry.contentSize.height) / 2).rounded())
+		viewportContext.width = Int(geometry.contentSize.width.rounded())
+		viewportContext.height = Int(geometry.contentSize.height.rounded())
 		CParsec.renderGLFrame(timeout: timeout, preRender: glPreRenderCallback, opaque: Unmanaged.passUnretained(viewportContext).toOpaque())
 
 		drawnFrames += 1

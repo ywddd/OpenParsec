@@ -10,7 +10,6 @@ protocol ParsecPlayground {
 	func viewDidLoad()
 	func cleanUp()
 	func updateSize(width: CGFloat, height: CGFloat)
-	func setDisplayMode(_ mode: StreamDisplayMode)
 }
 
 class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchInputDelegate {
@@ -90,9 +89,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	var menuEdgeSwipeRight: UIScreenEdgePanGestureRecognizer?
 	var scrollView: UIScrollView!
 	var contentView: UIView!
-	var displayMode: StreamDisplayMode = SettingsHandler.streamDisplayMode {
-		didSet { applyDisplayMode() }
-	}
+	var displayMode: StreamDisplayMode = SettingsHandler.streamDisplayMode
 	var visibleContentRect: CGRect = .zero
 	var lastLaidOutWidth: CGFloat = 0
 	var lastLaidOutHeight: CGFloat = 0
@@ -124,7 +121,6 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 			}
 			self.glkView = ParsecGLKViewController(viewController: self, updateImage: update)
 		}
-		glkView.setDisplayMode(displayMode)
 		if let bridge = CParsec.parsecImpl as? ParsecSDKBridge {
 			bridge.displayMode = displayMode
 		}
@@ -218,7 +214,6 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	}
 
 	private func syncDisplayModeToRenderers() {
-		glkView.setDisplayMode(displayMode)
 		if let bridge = CParsec.parsecImpl as? ParsecSDKBridge {
 			bridge.displayMode = displayMode
 		}
@@ -239,14 +234,12 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		guard hostSize.width > 0, hostSize.height > 0, viewport.width > 0, viewport.height > 0 else { return }
 		lastAppliedHostSize = hostSize
 		lastAppliedViewportSize = viewport
-		let geometry = StreamGeometry(viewportSize: viewport, hostSize: hostSize, mode: displayMode)
+		let geometry = StreamGeometry(viewportSize: viewport, hostSize: hostSize)
 		glkView.updateSize(width: geometry.contentSize.width, height: geometry.contentSize.height)
 		contentView.frame = CGRect(origin: .zero, size: geometry.contentSize)
 		scrollView.contentSize = geometry.contentSize
-		if displayMode == .fit {
-			contentView.frame.origin = CGPoint(x: max(0, -geometry.contentOffset.x),
-											   y: max(0, -geometry.contentOffset.y))
-		}
+		contentView.frame.origin = CGPoint(x: max(0, -geometry.contentOffset.x),
+										   y: max(0, -geometry.contentOffset.y))
 		scrollView.contentOffset = geometry.scrollOffset
 		visibleContentRect = CGRect(origin: geometry.scrollOffset, size: viewport)
 		CParsec.setFrame(geometry.contentSize.width, geometry.contentSize.height, UIScreen.main.scale)
@@ -422,6 +415,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		guard w > 0, h > 0, w != lastLaidOutWidth || h != lastLaidOutHeight else { return }
 		lastLaidOutWidth = w
 		lastLaidOutHeight = h
+		requestAdaptiveResolutionIfNeeded()
 		glkView.updateSize(width: w, height: h)
 		applyStreamLayout(width: w, height: h)
 	}
@@ -436,14 +430,12 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		}
 		lastAppliedHostSize = hostSize
 		lastAppliedViewportSize = viewport
-		let geometry = StreamGeometry(viewportSize: viewport, hostSize: hostSize, mode: displayMode)
+		let geometry = StreamGeometry(viewportSize: viewport, hostSize: hostSize)
 		glkView.updateSize(width: geometry.contentSize.width, height: geometry.contentSize.height)
 		contentView.frame = CGRect(origin: .zero, size: geometry.contentSize)
 		scrollView.contentSize = geometry.contentSize
-		if displayMode == .fit {
-			contentView.frame.origin = CGPoint(x: max(0, -geometry.contentOffset.x),
-											   y: max(0, -geometry.contentOffset.y))
-		}
+		contentView.frame.origin = CGPoint(x: max(0, -geometry.contentOffset.x),
+										   y: max(0, -geometry.contentOffset.y))
 		scrollView.contentOffset = geometry.scrollOffset
 		visibleContentRect = CGRect(origin: geometry.scrollOffset, size: CGSize(width: width, height: height))
 		CParsec.setFrame(geometry.contentSize.width, geometry.contentSize.height, UIScreen.main.scale)
@@ -456,6 +448,21 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		guard hostSize.width > 0, hostSize.height > 0, viewport.width > 0, viewport.height > 0 else { return }
 		guard hostSize != lastAppliedHostSize || viewport != lastAppliedViewportSize else { return }
 		applyDisplayMode()
+	}
+
+	func requestAdaptiveResolutionIfNeeded() {
+		guard displayMode == .adaptive, !DataManager.model.adaptiveResolutionPaused,
+			  SettingsHandler.resolution == .client, CParsec.parsecImpl != nil else { return }
+		let screen = AdaptiveHostResolution.currentViewportSize(preferring: .zero)
+		guard screen.width > screen.height else { return }
+		let viewport = view.bounds.size
+		guard viewport.width > viewport.height else { return }
+		guard let target = AdaptiveHostResolution.target(for: viewport) else { return }
+		guard DataManager.model.adaptiveResolution != target else { return }
+		DataManager.model.adaptiveResolution = target
+		DataManager.model.resolutionX = target.width
+		DataManager.model.resolutionY = target.height
+		CParsec.updateHostVideoConfig()
 	}
 
 	override func viewDidAppear(_ animated: Bool) {
@@ -665,7 +672,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	}
 
 	func pictureShiftAboveKeyboard(_ keyboard: CGFloat) -> CGFloat? {
-		guard displayMode == .fit else { return nil }
+		guard displayMode == .original else { return nil }
 		let w = view.bounds.width, h = view.bounds.height
 		guard keyboard > 0, CParsec.hostWidth > 0, CParsec.hostHeight > 0 else { return nil }
 		let picture = min(h, w * CGFloat(CParsec.hostHeight / CParsec.hostWidth))

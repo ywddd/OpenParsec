@@ -41,7 +41,6 @@ class ParsecMetalRenderer: NSObject, MTKViewDelegate {
 	private var current = -1
 	private var frameSize = CGSize.zero
 	let updateImage: () -> Void
-	var displayMode: StreamDisplayMode = .fill
 
 	var device: MTLDevice { queue.device }
 
@@ -143,16 +142,12 @@ class ParsecMetalRenderer: NSObject, MTKViewDelegate {
 			return
 		}
 		if current >= 0, let p = planes[current] {
-			if displayMode == .fill {
-				enc.setViewport(MTLViewport(originX: 0, originY: 0, width: Double(view.drawableSize.width), height: Double(view.drawableSize.height), znear: 0, zfar: 1))
-			} else {
-				let geometry = StreamGeometry(viewportSize: view.drawableSize, hostSize: frameSize, mode: .fit)
-				enc.setViewport(MTLViewport(originX: Double((view.drawableSize.width - geometry.contentSize.width) / 2),
-											originY: Double((view.drawableSize.height - geometry.contentSize.height) / 2),
-											width: Double(geometry.contentSize.width),
-											height: Double(geometry.contentSize.height),
-											znear: 0, zfar: 1))
-			}
+			let geometry = StreamGeometry(viewportSize: view.drawableSize, hostSize: frameSize)
+			enc.setViewport(MTLViewport(originX: Double((view.drawableSize.width - geometry.contentSize.width) / 2),
+										originY: Double((view.drawableSize.height - geometry.contentSize.height) / 2),
+										width: Double(geometry.contentSize.width),
+										height: Double(geometry.contentSize.height),
+										znear: 0, zfar: 1))
 			enc.setRenderPipelineState(pipeline)
 			enc.setFragmentTexture(p.y, index: 0)
 			enc.setFragmentTexture(p.c, index: 1)

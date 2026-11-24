@@ -97,8 +97,8 @@ struct SettingsView: View {
 							CatList {
 								CatItem(L("display_mode")) {
 									SegmentPicker(selection: $settings.streamDisplayMode, options: [
-										Choice(L("display_fill"), StreamDisplayMode.fill),
-										Choice(L("display_fit"), StreamDisplayMode.fit)
+										Choice(L("display_fill"), StreamDisplayMode.adaptive),
+										Choice(L("display_fit"), StreamDisplayMode.original)
 									])
 									.frame(width: 165)
 								}

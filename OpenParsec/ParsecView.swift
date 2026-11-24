@@ -502,6 +502,14 @@ struct ParsecView: View {
 			}
 		}
 		.onAppear(perform: post)
+		.onChange(of: verticalSizeClass) { _ in
+			guard SettingsHandler.streamDisplayMode == .adaptive else { return }
+			parsecViewController.requestAdaptiveResolutionIfNeeded()
+		}
+		.onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+			guard SettingsHandler.streamDisplayMode == .adaptive else { return }
+			parsecViewController.requestAdaptiveResolutionIfNeeded()
+		}
 		.onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ParsecBackgroundDisconnect"))) { _ in
 			if #available(iOS 15.0, *) {
 				if PictureInPictureManager.shared.isPiPActive {
@@ -613,7 +621,7 @@ struct ParsecView: View {
 							.multilineTextAlignment(.center)
 					}
 					Button(action: toggleDisplayMode) {
-						Text(String(format: L("display_mode_state"), L(settingsStore.streamDisplayMode == .fill ? "display_fill" : "display_fit")))
+						Text(String(format: L("display_mode_state"), L(settingsStore.streamDisplayMode == .adaptive ? "display_fill" : "display_fit")))
 							.padding(8)
 							.frame(maxWidth: .infinity)
 							.multilineTextAlignment(.center)
@@ -727,10 +735,10 @@ struct ParsecView: View {
 		parsecViewController.setZoomEnabled(zoomEnabled)
 
 		DataManager.model.constantFps = SettingsHandler.constantFps
-
 		let screenSize: CGSize = self.parsecViewController.view.frame.size
 		let scaleFactor = UIScreen.main.nativeScale
 		ParsecResolution.updateClientResolution(width: Int(screenSize.width * scaleFactor), height: Int(screenSize.height * scaleFactor))
+		parsecViewController.requestAdaptiveResolutionIfNeeded()
 
 		ParsecView.getHostUserData()
 
@@ -782,6 +790,7 @@ struct ParsecView: View {
 		zoomEnabled = SettingsHandler.zoomEnabled
 		parsecViewController.setZoomEnabled(zoomEnabled)
 		parsecViewController.applyDisplayMode()
+		parsecViewController.requestAdaptiveResolutionIfNeeded()
 		parsecViewController.updatePanHandle()
 		parsecViewController.positionCursorOverlay()
 		hideOverlay = SettingsHandler.noOverlay
@@ -792,6 +801,9 @@ struct ParsecView: View {
 
 		var hostConfigChanged = false
 		if SettingsHandler.resolution != resolutionAtOpen {
+			if SettingsHandler.streamDisplayMode == .adaptive {
+				DataManager.model.adaptiveResolutionPaused = true
+			}
 			DataManager.model.resolutionX = SettingsHandler.resolution.width
 			DataManager.model.resolutionY = SettingsHandler.resolution.height
 			hostConfigChanged = true
@@ -911,6 +923,9 @@ struct ParsecView: View {
 	func changeResolution(res: ParsecResolution) {
         SettingsHandler.resolution = res
 		DispatchQueue.main.async {
+			if SettingsHandler.streamDisplayMode == .adaptive {
+				DataManager.model.adaptiveResolutionPaused = res != .client
+			}
 			DataManager.model.resolutionX = res.width
 			DataManager.model.resolutionY = res.height
 			CParsec.updateHostVideoConfig()
@@ -961,8 +976,12 @@ struct ParsecView: View {
 
 	func toggleDisplayMode() {
 		DispatchQueue.main.async {
-			settingsStore.streamDisplayMode = settingsStore.streamDisplayMode == .fill ? .fit : .fill
+			settingsStore.streamDisplayMode = settingsStore.streamDisplayMode == .adaptive ? .original : .adaptive
 			parsecViewController.displayMode = settingsStore.streamDisplayMode
+			if settingsStore.streamDisplayMode == .adaptive {
+				DataManager.model.adaptiveResolutionPaused = false
+			}
+			parsecViewController.applyDisplayMode()
 		}
 	}
 
