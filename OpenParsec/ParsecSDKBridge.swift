@@ -136,7 +136,7 @@ class ParsecSDKBridge: ParsecService {
 
 	public var clientWidth: Float = 1920
 	public var clientHeight: Float = 1080
-	var displayMode: StreamDisplayMode = .adaptive
+	var displayMode: StreamDisplayMode = SettingsHandler.streamDisplayMode
 	private var hasFrame = false
 	private var didSetDimensions = false
 	private var lastActualFrameSize = StreamPixelSize(width: 0, height: 0)
@@ -144,8 +144,8 @@ class ParsecSDKBridge: ParsecService {
 	private var pendingActualFrameGeneration = 0
 	private let actualFrameLock = NSLock()
 	private var requestTimeoutWorkItem: DispatchWorkItem?
-	private let actualFrameDeliveryLock = NSLock()
 	private var actualFrameDeliveryScheduled = false
+	private var actualFrameDeliveryToken = 0
 	private var lastDeliveredActualFrameSize = StreamPixelSize(width: 0, height: 0)
 	static let adaptiveRequestTimeout: TimeInterval = 10
 
@@ -219,12 +219,6 @@ class ParsecSDKBridge: ParsecService {
 		audio_destroy(&_audio)
 	}
 
-	static func reportActualFrameSize(width: Int, height: Int) {
-		guard let bridge = CParsec.parsecImpl as? ParsecSDKBridge else { return }
-		bridge.captureFrameSize(width: width, height: height, generation: bridge.pollGeneration)
-		bridge.publishPendingActualFrameSize()
-	}
-
 	private func captureFrameSize(width: Int, height: Int, generation: Int) {
 		let size = StreamPixelSize(width: width, height: height)
 		guard size.isValid else { return }
@@ -251,38 +245,42 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	private func deliverActualFrameSize(_ size: StreamPixelSize, generation: Int) {
-		guard generation == pollGeneration else { return }
 		actualFrameLock.lock()
+		guard generation == pollGeneration else {
+			actualFrameLock.unlock()
+			return
+		}
 		let changed = size != lastActualFrameSize
 		if changed { lastActualFrameSize = size }
+		var scheduledToken: Int?
+		if changed && !actualFrameDeliveryScheduled {
+			actualFrameDeliveryScheduled = true
+			actualFrameDeliveryToken &+= 1
+			scheduledToken = actualFrameDeliveryToken
+		}
 		actualFrameLock.unlock()
-		guard changed else { return }
-		actualFrameDeliveryLock.lock()
-		let schedule = !actualFrameDeliveryScheduled
-		actualFrameDeliveryScheduled = true
-		actualFrameDeliveryLock.unlock()
-		if schedule {
+		if let scheduledToken = scheduledToken {
 			DispatchQueue.main.async { [weak self] in
-				self?.flushActualFrameDelivery(generation: generation)
+				self?.flushActualFrameDelivery(generation: generation, token: scheduledToken)
 			}
 		}
 	}
 
-	private func flushActualFrameDelivery(generation: Int) {
-		guard generation == pollGeneration else {
-			actualFrameDeliveryLock.lock()
-			actualFrameDeliveryScheduled = false
-			actualFrameDeliveryLock.unlock()
+	private func flushActualFrameDelivery(generation: Int, token: Int) {
+		actualFrameLock.lock()
+		guard actualFrameDeliveryScheduled, actualFrameDeliveryToken == token else {
+			actualFrameLock.unlock()
 			return
 		}
-		actualFrameLock.lock()
-		let size = lastActualFrameSize
-		actualFrameLock.unlock()
-		actualFrameDeliveryLock.lock()
 		actualFrameDeliveryScheduled = false
+		guard generation == pollGeneration else {
+			actualFrameLock.unlock()
+			return
+		}
+		let size = lastActualFrameSize
 		let changed = size != lastDeliveredActualFrameSize
 		if changed { lastDeliveredActualFrameSize = size }
-		actualFrameDeliveryLock.unlock()
+		actualFrameLock.unlock()
 		guard changed, size.isValid else { return }
 		DataManager.model.actualFrameWidth = size.width
 		DataManager.model.actualFrameHeight = size.height
@@ -305,11 +303,10 @@ class ParsecSDKBridge: ParsecService {
 		pendingActualFrameSize = nil
 		pendingActualFrameGeneration = 0
 		lastActualFrameSize = StreamPixelSize(width: 0, height: 0)
-		actualFrameLock.unlock()
-		actualFrameDeliveryLock.lock()
 		actualFrameDeliveryScheduled = false
+		actualFrameDeliveryToken &+= 1
 		lastDeliveredActualFrameSize = StreamPixelSize(width: 0, height: 0)
-		actualFrameDeliveryLock.unlock()
+		actualFrameLock.unlock()
 		DataManager.model.actualFrameWidth = 0
 		DataManager.model.actualFrameHeight = 0
 	}
@@ -386,10 +383,24 @@ class ParsecSDKBridge: ParsecService {
 			  !DataManager.model.adaptiveResolutionPaused,
 			  SettingsHandler.resolution == .client,
 			  displayMode == .adaptive else { return }
-		let accepted = AdaptiveResolutionRequestTracker.accepts(frame: size, target: target)
-		if accepted {
+		let now = CACurrentMediaTime()
+		switch state {
+		case .waiting(_, let requestedAt):
+			var tracker = AdaptiveResolutionRequestTracker(target: target, requestedAt: requestedAt)
+			let next = tracker.observe(frame: size, now: now, timeout: Self.adaptiveRequestTimeout)
+			guard next != state else { return }
+			if !next.isWaiting { cancelAdaptiveRequestTimer() }
+			DataManager.model.adaptiveRequestState = next
+		case .matched:
+			guard !AdaptiveResolutionRequestTracker.accepts(frame: size, target: target) else { return }
+			DataManager.model.adaptiveRequestState = .waiting(target, requestedAt: now)
+			scheduleAdaptiveRequestTimeout(target: target, at: now)
+		case .unmatched:
+			guard AdaptiveResolutionRequestTracker.accepts(frame: size, target: target) else { return }
 			cancelAdaptiveRequestTimer()
 			DataManager.model.adaptiveRequestState = .matched(target)
+		case .inactive:
+			break
 		}
 	}
 
@@ -469,7 +480,6 @@ class ParsecSDKBridge: ParsecService {
 		hasFrame = false
 		resetAdaptiveResolutionRequest()
 		resetActualFrameSize()
-		let generation = pollGeneration
 
 		let status = ParsecClientConnect(_parsec, &parsecClientCfg, NetworkHandler.clinfo?.session_id, peerID)
 
@@ -480,10 +490,7 @@ class ParsecSDKBridge: ParsecService {
 			   let target = AdaptiveHostResolution.target(
 				for: ParsecSDKBridge.currentViewportSize(preferring: .zero),
 				nativeScale: UIScreen.main.nativeScale) {
-				DispatchQueue.main.async {
-					guard generation == self.pollGeneration else { return }
-					self.recordAdaptiveRequest(target)
-				}
+				recordAdaptiveRequest(target)
 			}
 			ParsecBackgroundManager.shared.connectionDidStart()
 		}
@@ -562,10 +569,32 @@ class ParsecSDKBridge: ParsecService {
 
 	func getStatusEx(_ pcs: inout ParsecClientStatus) -> ParsecStatus {
 		let ans = ParsecClientGetStatus(_parsec, &pcs)
-		if pcs.decoder.0.width > 0 && pcs.decoder.0.height > 0 {
-			self.hostHeight = Float(pcs.decoder.0.height)
-			self.hostWidth = Float(pcs.decoder.0.width)
-			publishDecoderSize(width: Int(pcs.decoder.0.width), height: Int(pcs.decoder.0.height))
+		let decoderWidth = Int(pcs.decoder.0.width)
+		let decoderHeight = Int(pcs.decoder.0.height)
+		if decoderWidth > 0 && decoderHeight > 0 {
+			let oldSize = sdkHostSize
+			let newSize = CGSize(width: CGFloat(decoderWidth), height: CGFloat(decoderHeight))
+			if oldSize != newSize {
+				let viewportSize = CGSize(width: CGFloat(clientWidth), height: CGFloat(clientHeight))
+				if oldSize.width > 0, oldSize.height > 0,
+				   viewportSize.width > 0, viewportSize.height > 0 {
+					let oldGeometry = StreamGeometry(viewportSize: viewportSize, hostSize: oldSize)
+					let newGeometry = StreamGeometry(viewportSize: viewportSize, hostSize: newSize)
+					let hostPoint = oldGeometry.hostPoint(forScreenPoint: CGPoint(
+						x: CGFloat(mouseInfo.mouseX),
+						y: CGFloat(mouseInfo.mouseY)
+					))
+					let moved = newGeometry.screenPoint(forHostPoint: CGPoint(
+						x: min(max(0, hostPoint.x / oldSize.width), 1) * newSize.width,
+						y: min(max(0, hostPoint.y / oldSize.height), 1) * newSize.height
+					))
+					mouseInfo.mouseX = ParsecSDKBridge.clamp(Int32(moved.x.rounded()), minValue: 0, maxValue: Int32(clientWidth))
+					mouseInfo.mouseY = ParsecSDKBridge.clamp(Int32(moved.y.rounded()), minValue: 0, maxValue: Int32(clientHeight))
+				}
+				self.hostWidth = Float(decoderWidth)
+				self.hostHeight = Float(decoderHeight)
+			}
+			publishDecoderSize(width: decoderWidth, height: decoderHeight)
 		}
 		publishPendingActualFrameSize()
 
@@ -620,9 +649,10 @@ class ParsecSDKBridge: ParsecService {
 		let holder = ParsecFramePollContext(bridge: self, callback: callback, opaque: opaque, generation: generation)
 		let status = withExtendedLifetime(holder) {
 			ParsecClientPollFrame(_parsec, UInt8(DEFAULT_STREAM), { frame, image, context in
-				guard let frame = frame, let context = context else { return }
+				guard let frame = frame, image != nil, let context = context else { return }
 				let holder = Unmanaged<ParsecFramePollContext>.fromOpaque(context).takeUnretainedValue()
 				guard holder.generation == holder.bridge.pollGeneration else { return }
+				guard frame.pointee.isWholeNV12 else { return }
 				holder.bridge.captureFrameSize(frame.pointee, generation: holder.generation)
 				if holder.generation == holder.bridge.pollGeneration {
 					holder.callback(frame, image, holder.opaque)
@@ -644,6 +674,7 @@ class ParsecSDKBridge: ParsecService {
 
 	@discardableResult
 	func pollEvent(timeout: UInt32 = 16, sawCursor: inout Bool) -> Bool { // timeout in ms, 16 == 60 FPS, 8 == 120 FPS, etc.
+		let generation = pollGeneration
 		var e: ParsecClientEvent!
 		var _event = ParsecClientEvent()
 		var pollSuccess = false
@@ -651,24 +682,31 @@ class ParsecSDKBridge: ParsecService {
 			pollSuccess = ParsecClientPollEvents(_parsec, timeout, _eventPtr)
 			e = _eventPtr.pointee
 		})
+		guard generation == pollGeneration else { return false }
 		if !pollSuccess {
 			return ParsecClientGetStatus(_parsec, nil) != PARSEC_OK
 		}
 		if e.type == CLIENT_EVENT_CURSOR {
 			handleCursorEvent(event: e.cursor, sawCursor: &sawCursor)
 		} else if e.type == CLIENT_EVENT_USER_DATA {
-			handleUserDataEvent(event: e.userData)
+			handleUserDataEvent(event: e.userData, generation: generation)
 		} else if e.type == CLIENT_EVENT_STREAM {
 			os_log("%{public}@", log: sdkLog, "[stream] s=\(e.stream.stream) status=\(e.stream.status.rawValue)")
 		} else if e.type == CLIENT_EVENT_BLOCKED {
-			DispatchQueue.main.async { DataManager.model.isBlocked = true }
+			DispatchQueue.main.async {
+				guard generation == self.pollGeneration else { return }
+				DataManager.model.isBlocked = true
+			}
 		} else if e.type == CLIENT_EVENT_UNBLOCKED {
-			DispatchQueue.main.async { DataManager.model.isBlocked = false }
+			DispatchQueue.main.async {
+				guard generation == self.pollGeneration else { return }
+				DataManager.model.isBlocked = false
+			}
 		}
 		return false
 	}
 
-	func handleUserDataEvent(event: ParsecClientUserDataEvent) {
+	func handleUserDataEvent(event: ParsecClientUserDataEvent, generation: Int) {
 
 		let pointer = ParsecGetBuffer(_parsec, event.key)
 		if pointer == nil {
@@ -683,6 +721,7 @@ class ParsecSDKBridge: ParsecService {
 				let config = try decoder.decode(ParsecUserDataVideoConfig.self, from: Data(bytesNoCopy: pointer!, count: strlen(pointer!), deallocator: .none))
 				let videoConfig = config.video.first
 				DispatchQueue.main.async {
+					guard generation == self.pollGeneration else { return }
 					if let cfg = videoConfig {
 						DataManager.model.resolutionX = cfg.resolutionX
 						DataManager.model.resolutionY = cfg.resolutionY
@@ -701,8 +740,9 @@ class ParsecSDKBridge: ParsecService {
 							DataManager.model.requestedResolutionX = target.width
 							DataManager.model.requestedResolutionY = target.height
 						} else {
-							DataManager.model.requestedResolutionX = SettingsHandler.resolution.width
-							DataManager.model.requestedResolutionY = SettingsHandler.resolution.height
+							let settings = SettingsHandler.resolution
+							DataManager.model.requestedResolutionX = settings == .client ? 0 : settings.width
+							DataManager.model.requestedResolutionY = settings == .client ? 0 : settings.height
 						}
 						DataManager.model.constantFps = SettingsHandler.constantFps
 						if SettingsHandler.bitrate > 0 {
@@ -720,6 +760,7 @@ class ParsecSDKBridge: ParsecService {
 				let decoder = JSONDecoder()
 				let config = try decoder.decode(Array<ParsecDisplayConfig>.self, from: Data(bytesNoCopy: pointer!, count: strlen(pointer!), deallocator: .none))
 				DispatchQueue.main.async {
+					guard generation == self.pollGeneration else { return }
 					DataManager.model.displayConfigs = config
 				}
 			} catch {
@@ -874,12 +915,6 @@ class ParsecSDKBridge: ParsecService {
 		mouseInfo.mouseX = ParsecSDKBridge.clamp(Int32(sdkPoint.x.rounded()), minValue: 0, maxValue: Int32(self.clientWidth))
 		mouseInfo.mouseY = ParsecSDKBridge.clamp(Int32(sdkPoint.y.rounded()), minValue: 0, maxValue: Int32(self.clientHeight))
 		sendSDKPoint(sdkPoint)
-	}
-
-	func sendMousePosition(pixelPoint: CGPoint) {
-		let scale = max(1, UIScreen.main.nativeScale)
-		let viewportPoint = CGPoint(x: pixelPoint.x / scale, y: pixelPoint.y / scale)
-		sendMousePosition(viewportPoint: viewportPoint)
 	}
 
 	private func sendSDKPoint(_ point: CGPoint) {

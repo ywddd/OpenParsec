@@ -157,6 +157,10 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	}
 
 	func updateImage() {
+		guard Thread.isMainThread else {
+			DispatchQueue.main.async { [weak self] in self?.updateImage() }
+			return
+		}
 		syncHostSizeIfNeeded()
 		updateRenderScale()
         // Optimization: Snap current valus
@@ -269,6 +273,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		scrollView.minimumZoomScale = 1.0
 		scrollView.maximumZoomScale = 5.0
 		scrollView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+		scrollView.contentInsetAdjustmentBehavior = .never
 		// The scroll view is a programmatically-driven zoom/pan container only. Every touch is
 		// owned by touchOverlay (created below); the scroll view's own gestures are disabled so
 		// they can never race with or swallow our cursor / pinch / scroll handling.
@@ -733,7 +738,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	}
 
 	func pictureShiftAboveKeyboard(_ keyboard: CGFloat) -> CGFloat? {
-		guard displayMode == .original else { return nil }
+		guard displayMode == .original || view.bounds.height >= view.bounds.width else { return nil }
 		let w = view.bounds.width, h = view.bounds.height
 		guard keyboard > 0, CParsec.hostWidth > 0, CParsec.hostHeight > 0 else { return nil }
 		let picture = min(h, w * CGFloat(CParsec.actualFrameHeight / CParsec.actualFrameWidth))

@@ -157,7 +157,6 @@ protocol ParsecService {
 	func sendMouseDelta(_ dx: Int32, _ dy: Int32)
 	func sendMousePosition(_ x: Int32, _ y: Int32)
 	func sendMousePosition(viewportPoint: CGPoint)
-	func sendMousePosition(pixelPoint: CGPoint)
 	func sendKeyboardMessage(event: KeyBoardKeyEvent)
 	func sendKeyboardMessage(keyCode: UInt32, pressed: Bool)
 	func sendVirtualKeyboardInput(text: String)
@@ -283,10 +282,6 @@ class CParsec {
 
 	static func sendMousePosition(viewportPoint: CGPoint) {
 		parsecImpl.sendMousePosition(viewportPoint: viewportPoint)
-	}
-
-	static func sendMousePosition(pixelPoint: CGPoint) {
-		parsecImpl.sendMousePosition(pixelPoint: pixelPoint)
 	}
 
 	static func sendKeyboardMessage(event: KeyBoardKeyEvent) {

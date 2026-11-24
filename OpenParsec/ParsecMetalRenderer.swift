@@ -40,6 +40,7 @@ class ParsecMetalRenderer: NSObject, MTKViewDelegate {
 	private var planes: [(y: MTLTexture, c: MTLTexture)?] = [nil, nil, nil]
 	private var current = -1
 	private var frameSize = CGSize.zero
+	private var uploadedFrame = false
 	let updateImage: () -> Void
 
 	var device: MTLDevice { queue.device }
@@ -79,15 +80,12 @@ class ParsecMetalRenderer: NSObject, MTKViewDelegate {
 	func reset() {
 		planes = [nil, nil, nil]
 		current = -1
+		uploadedFrame = false
 		lastDrawAt = 0
 		drawIntervals.removeAll()
 	}
 
 	fileprivate func upload(_ f: ParsecFrame, _ image: UnsafeRawPointer) {
-		if let next = ParsecBackgroundManager.shared.onNextFrame {
-			ParsecBackgroundManager.shared.onNextFrame = nil
-			next()
-		}
 		let w = Int(f.width), h = Int(f.height), stride = Int(f.fullWidth), rows = Int(f.fullHeight)
 		guard f.isWholeNV12 else { return }
 		let slot = (current + 1) % planes.count
@@ -99,6 +97,7 @@ class ParsecMetalRenderer: NSObject, MTKViewDelegate {
 		p.c.replace(region: MTLRegionMake2D(0, 0, (w + 1) / 2, (h + 1) / 2), mipmapLevel: 0, withBytes: image + stride * rows, bytesPerRow: stride)
 		current = slot
 		frameSize = CGSize(width: w, height: h)
+		uploadedFrame = true
 		if #available(iOS 15.0, *) {
 			PictureInPictureManager.shared.feedFrame(f, image)
 		}
@@ -134,7 +133,12 @@ class ParsecMetalRenderer: NSObject, MTKViewDelegate {
 		let timeout = UInt32(max(1000 / fps, 8))
 
 		inFlight.wait()
+		uploadedFrame = false
 		CParsec.pollFrame(timeout: timeout, callback: frameCallback, opaque: Unmanaged.passUnretained(self).toOpaque())
+		if uploadedFrame, let next = ParsecBackgroundManager.shared.onNextFrame {
+			ParsecBackgroundManager.shared.onNextFrame = nil
+			next()
+		}
 
 		guard let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
 			  let cb = queue.makeCommandBuffer(), let enc = cb.makeRenderCommandEncoder(descriptor: pass) else {

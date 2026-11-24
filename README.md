@@ -52,6 +52,8 @@ The stream pauses in the background, resumes on return and reconnects after a ne
 
 主机必须支持这个显示模式。Parsec Windows 主机设置中选择分辨率跟随客户端，并使用主机的同一个账号连接；SDK 的连接分辨率通常仅对第一个所有者连接有效。在主机高级配置中，`server_resolution_x` 和 `server_resolution_y` 均为 `0` 表示跟随客户端，均为 `65535` 表示保留主机分辨率。修改后重启主机 Parsec，再重新连接。
 
+优先在运行中的主机界面选择 `Use Client Resolution`，不要直接编辑运行中的 `config.json`：Parsec 会用内存中的旧设置覆盖文件。必须手动改文件时，先完全退出主机 Parsec，备份配置后再将这两项设为 `0`，最后重新启动。此操作会断开现有远程连接，应在主机本地操作或保留备用连接。
+
 已有支持目标模式的虚拟显示器可以直接使用。Parsec 官方 VDD 的虚拟显示功能需相应 Warp/Teams 权益；仅安装驱动不代表已启用虚拟屏。客户端无法创建主机显示驱动不支持的任意分辨率。
 
 串流菜单会显示“等待 / 已匹配 / 未匹配”，并报告请求分辨率、实际视频帧、解码器状态以及画面矩形。实际画面未匹配时，仍完整等比显示，并提示主机设置；不会用裁剪或拉伸伪装成功。

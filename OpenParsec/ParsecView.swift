@@ -705,7 +705,7 @@ struct ParsecView: View {
 		case .matched(let target):
 			return "自适应：已匹配 \(target.width)×\(target.height)"
 		case .unmatched(let target):
-			return "未匹配 \(target.width)×\(target.height)：主机未采用。请在主机“设置 → 主机 → 分辨率”选择跟随客户端，并确认虚拟显示器支持该模式；画面保持等比完整"
+			return "尚未收到匹配 \(target.width)×\(target.height) 的画面。请检查网络，并在主机“设置 → 主机 → 分辨率”选择跟随客户端，确认显示器支持该模式；当前保持等比完整"
 		}
 	}
 

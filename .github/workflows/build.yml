@@ -17,7 +17,7 @@ concurrency:
 jobs:
   build:
     name: Build using xcodebuild command
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     env:
       scheme: OpenParsec
       archive_path: archive
@@ -82,6 +82,11 @@ jobs:
           let rejected = StreamGeometry(viewportSize: viewport, hostSize: sdkSize)
           near(rejected.pictureSize.width, 1929.6, "unmatched frame has side bars only")
           near(rejected.pictureSize.height, 1206, "unmatched frame still fills height")
+          let native = StreamGeometry(viewportSize: viewport, hostSize: viewport)
+          near(native.pictureSize.width, 2622, "native frame fills width")
+          near(native.pictureSize.height, 1206, "native frame fills height")
+          near(native.pictureOrigin.x, 0, "native frame has no side bars")
+          near(native.pictureOrigin.y, 0, "native frame has no top bars")
           let portrait = StreamGeometry(viewportSize: CGSize(width: 1206, height: 2622), hostSize: sdkSize)
           near(portrait.pictureSize.width, 1206, "portrait native fit width")
           near(portrait.pictureSize.height, 753.75, "portrait native fit height")
@@ -102,6 +107,11 @@ jobs:
               let returned = decoded.viewportPoint(forSDKPoint: sdkPoint, sdkHostSize: sdkSize)
               near(returned.x, screenPoint.x, "SDK-screen round trip x")
               near(returned.y, screenPoint.y, "SDK-screen round trip y")
+              let oldHost = sdkGeometry.hostPoint(forScreenPoint: expectedSDK)
+              let updatedHost = CGPoint(x: oldHost.x / sdkSize.width * decodedSize.width, y: oldHost.y / sdkSize.height * decodedSize.height)
+              let updatedSDK = decoded.screenPoint(forHostPoint: updatedHost)
+              near(updatedSDK.x, screenPoint.x, "decoder metadata change preserves normalized cursor x")
+              near(updatedSDK.y, screenPoint.y, "decoder metadata change preserves normalized cursor y")
           }
 
           let target = AdaptiveHostResolution.target(for: CGSize(width: 874, height: 402), nativeScale: 3)!
