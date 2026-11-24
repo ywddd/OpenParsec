@@ -215,8 +215,9 @@ enum VirtualMouseGeometry {
 	static let maximumBodyWidth: CGFloat = 160
 	static let collapsedSize: CGFloat = 46
 	static let minimumButtonLength: CGFloat = 44
-	static let minimumPalmHeight: CGFloat = 44
+	static let minimumPalmHeight: CGFloat = 40
 	static let minimumCollapseHitSize: CGFloat = 24
+	static let collapseTailInset: CGFloat = 1
 	static let minimumWheelWidth: CGFloat = 44
 	static let minimumWheelHeight: CGFloat = 72
 	static let wheelTrackWidth: CGFloat = 12
@@ -282,7 +283,7 @@ enum VirtualMouseGeometry {
 		let buttonBottom = bodyFrame.minY + bodyFrame.height * 0.50
 		let collapse = CGRect(
 			x: bodyFrame.midX - minimumCollapseHitSize / 2,
-			y: bodyFrame.maxY - minimumCollapseHitSize,
+			y: bodyFrame.maxY - minimumCollapseHitSize - collapseTailInset,
 			width: minimumCollapseHitSize,
 			height: minimumCollapseHitSize
 		)
