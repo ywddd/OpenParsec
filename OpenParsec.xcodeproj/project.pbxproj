@@ -12,6 +12,9 @@
 		A27110000000000000000023 /* StreamGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A27110000000000000000022 /* StreamGeometry.swift */; };
 		A27110000000000000000031 /* RemoteTextInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A27110000000000000000030 /* RemoteTextInputView.swift */; };
 		A27110000000000000000033 /* RemoteInputPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A27110000000000000000032 /* RemoteInputPolicy.swift */; };
+		A27110000000000000000041 /* StreamControlPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A27110000000000000000040 /* StreamControlPanel.swift */; };
+		A27110000000000000000043 /* VirtualMousePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A27110000000000000000042 /* VirtualMousePolicy.swift */; };
+		A27110000000000000000045 /* VirtualMouseOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A27110000000000000000044 /* VirtualMouseOverlay.swift */; };
 		170E0A772BEF5AFF00B0EA32 /* ParsecViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 170E0A762BEF5AFF00B0EA32 /* ParsecViewController.swift */; };
 		17374D412CB8E35D00EDCEE7 /* KeyCodeTranslators.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17374D402CB8E35500EDCEE7 /* KeyCodeTranslators.swift */; };
 		17840D1D2CB639530097374B /* ParsecUserData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17840D1C2CB6394D0097374B /* ParsecUserData.swift */; };
@@ -71,6 +74,9 @@
 		A27110000000000000000022 /* StreamGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamGeometry.swift; sourceTree = "<group>"; };
 		A27110000000000000000030 /* RemoteTextInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTextInputView.swift; sourceTree = "<group>"; };
 		A27110000000000000000032 /* RemoteInputPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteInputPolicy.swift; sourceTree = "<group>"; };
+		A27110000000000000000040 /* StreamControlPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamControlPanel.swift; sourceTree = "<group>"; };
+		A27110000000000000000042 /* VirtualMousePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualMousePolicy.swift; sourceTree = "<group>"; };
+		A27110000000000000000044 /* VirtualMouseOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualMouseOverlay.swift; sourceTree = "<group>"; };
 		170E0A762BEF5AFF00B0EA32 /* ParsecViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParsecViewController.swift; sourceTree = "<group>"; };
 		17374D402CB8E35500EDCEE7 /* KeyCodeTranslators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyCodeTranslators.swift; sourceTree = "<group>"; };
 		17840D1C2CB6394D0097374B /* ParsecUserData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParsecUserData.swift; sourceTree = "<group>"; };
@@ -157,6 +163,9 @@
 				A27110000000000000000002 /* ConnectionAttemptPolicy.swift */,
 				A27110000000000000000020 /* Localization.swift */,
 				A27110000000000000000032 /* RemoteInputPolicy.swift */,
+				A27110000000000000000040 /* StreamControlPanel.swift */,
+				A27110000000000000000042 /* VirtualMousePolicy.swift */,
+				A27110000000000000000044 /* VirtualMouseOverlay.swift */,
 				A27110000000000000000030 /* RemoteTextInputView.swift */,
 				E76224A02F8C017700A2F86F /* ParsecBackgroundManager.swift */,
 				E762250A2F8D0A0000A2F86F /* PictureInPictureManager.swift */,
@@ -313,6 +322,9 @@
 				A27110000000000000000023 /* StreamGeometry.swift in Sources */,
 				A27110000000000000000031 /* RemoteTextInputView.swift in Sources */,
 				A27110000000000000000033 /* RemoteInputPolicy.swift in Sources */,
+				A27110000000000000000041 /* StreamControlPanel.swift in Sources */,
+				A27110000000000000000043 /* VirtualMousePolicy.swift in Sources */,
+				A27110000000000000000045 /* VirtualMouseOverlay.swift in Sources */,
 				FC16A7AD29A97BDA00BB70A7 /* Shared.swift in Sources */,
 				84480EBE2ADC4FDA007DE5F1 /* GameController.swift in Sources */,
 				27AC751829EA339B00E8CAF7 /* URLImage.swift in Sources */,

@@ -178,13 +178,35 @@ jobs:
           precondition(RemoteInputPolicy.utf8Chunks(of: family, maxBytes: 4) == .failure(.tooLong), "oversize grapheme fails rather than corrupting")
           precondition(RemoteInputPolicy.pasteChord(for: .controlV) == RemotePasteChord(modifierKeyCode: 224, keyCode: 25), "Windows paste shortcut")
           precondition(RemoteInputPolicy.pasteChord(for: .commandV) == RemotePasteChord(modifierKeyCode: 227, keyCode: 25), "macOS paste shortcut")
+          var mouseButtons = VirtualMouseButtonReducer()
+          precondition(mouseButtons.down(.left).pressed == [.left], "left down once")
+          precondition(mouseButtons.down(.left).pressed.isEmpty, "duplicate down inert")
+          precondition(mouseButtons.down(.right).pressed == [.right], "independent right button")
+          precondition(mouseButtons.up(.left).released == [.left] && mouseButtons.held == [.right], "release only ended finger")
+          precondition(mouseButtons.cancelAll().released == [.right] && mouseButtons.held.isEmpty, "cancel releases remaining buttons")
+          precondition(mouseButtons.cancelAll().released.isEmpty, "repeat cancel inert")
+          for size in [CGSize(width: 393, height: 852), CGSize(width: 852, height: 393), CGSize(width: 375, height: 667)] {
+              for scale in [CGFloat(0.75), 1, 1.4] {
+                  let configuration = VirtualMouseConfiguration(enabled: true, scale: scale, normalizedPosition: CGPoint(x: 0.8, y: 0.65))
+                  let presentation = VirtualMouseGeometry.presentation(configuration: configuration, in: CGRect(origin: .zero, size: size), insets: VirtualMouseInsets(top: 8, left: 8, bottom: 34, right: 8), collapsed: false)
+                  precondition(!presentation.isCollapsed, "phone screen fits an expanded mouse")
+                  let layout = presentation.localizedToBody.layout!
+                  precondition(layout.isValid && layout.isContainedInBody, "controls have safe hit regions")
+                  precondition(layout.bodyFrame.origin == .zero, "drawing and hit testing use local origin")
+                  precondition(VirtualMouseGeometry.interaction(at: CGPoint(x: layout.leftButtonFrame.midX, y: layout.leftButtonFrame.midY), layout: layout) == .button(.left), "local left hit")
+                  precondition(VirtualMouseGeometry.interaction(at: CGPoint(x: layout.rightButtonFrame.midX, y: layout.rightButtonFrame.midY), layout: layout) == .button(.right), "local right hit")
+                  precondition(VirtualMouseGeometry.interaction(at: CGPoint(x: layout.resizeHandleFrame.midX, y: layout.resizeHandleFrame.midY), layout: layout) == .resize, "resize is reachable")
+              }
+          }
+          let compactMouse = VirtualMouseGeometry.presentation(configuration: VirtualMouseConfiguration(enabled: true, scale: 1, normalizedPosition: CGPoint(x: 1, y: 1)), in: CGRect(x: 0, y: 0, width: 393, height: 140), collapsed: false)
+          precondition(compactMouse.isCollapsed && compactMouse.bodyFrame.width == 44 && compactMouse.bodyFrame.height == 44, "keyboard constrained mouse stays recoverable")
           print("Stream geometry, screenshot regression, SDK mapping and adaptive outcomes passed")
           '''
           with tempfile.TemporaryDirectory(prefix='openparsec-geometry-') as temporary:
               main_path = Path(temporary) / 'main.swift'
               binary_path = Path(temporary) / 'geometry-check'
               main_path.write_text(source, encoding='utf-8')
-              subprocess.run(['swiftc', 'OpenParsec/StreamGeometry.swift', 'OpenParsec/RemoteInputPolicy.swift', str(main_path), '-o', str(binary_path)], check=True)
+              subprocess.run(['swiftc', 'OpenParsec/StreamGeometry.swift', 'OpenParsec/RemoteInputPolicy.swift', 'OpenParsec/VirtualMousePolicy.swift', str(main_path), '-o', str(binary_path)], check=True)
               subprocess.run([str(binary_path)], check=True)
           PY
       - name: Archive

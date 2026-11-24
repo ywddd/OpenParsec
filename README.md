@@ -41,6 +41,14 @@ Direct mode semantics are explicit: at 1× a tap places and clicks the host poin
 ## Mouse & Keyboard
 Hardware mice and keyboards are supported.
 
+### 手机悬浮鼠标与操作面板（中文版本）
+
+右下角“操作”入口在竖屏展开底部面板、横屏展开右侧面板，保留声音、仅观看、画面复位、设置、键盘、显示桌面、窗口切换及退出。退出需要确认；仅观看阻止鼠标、滚轮、文字、键盘和手柄输入。
+
+虚拟鼠标有独立左/右/中键、滚轮与移动区。按住左键并滑动该手指，或用另一指滑动移动区，可拖动远端项目；抬起、取消、收起或离开串流释放按钮。顶端手柄只移动浮层位置，右下手柄调整大小，关闭按钮收起为可重新展开的圆形入口。操作面板展开期间暂时隐藏鼠标，避免控件覆盖；收起面板后恢复。
+
+窗口快捷键沿用设置中的主机粘贴平台选择：Windows 为 Win+D / Alt+Tab，macOS 为 Cmd+F3 / Cmd+Tab。本轮根据用户提供的 UU 截图和 RustDesk 公开交互设计独立用 Swift/UIKit 实现，不复制其源码或品牌素材。原生输入法、按住拖动及键盘/旋转布局仍需手机实测。
+
 Option Key as Command can be turned on in Settings for Mac hosts.
 
 ### Text input and host clipboard (Chinese version)

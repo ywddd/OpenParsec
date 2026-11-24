@@ -36,7 +36,7 @@ struct ParsecStatusBar: View {
 
 	var body: some View {
 		// Overlay elements
-		if showMenu || SettingsHandler.alwaysShowStatus {
+		if SettingsHandler.alwaysShowStatus {
 			VStack {
 				Text(metricInfo)
 					.frame(minWidth: 200, maxWidth: .infinity, alignment: .leading)
@@ -247,7 +247,7 @@ struct ParsecStatusBar: View {
 			}
 		}
 
-		if showMenu || SettingsHandler.alwaysShowStatus {
+		if SettingsHandler.alwaysShowStatus {
 			let str = String.fromBuffer(&pcs.decoder.0.name.0, length: 16)
 			let model = DataManager.model
 			let adaptive = (CParsec.parsecImpl as? ParsecSDKBridge)?.adaptiveDiagnostic ?? "自适应：关闭"
@@ -280,11 +280,15 @@ class ParsecSession: ObservableObject {
     }
 }
 
-struct MenuRowsHeightKey: PreferenceKey {
-	static let defaultValue: CGFloat = 0
+enum StreamAlert: Identifiable {
+	case disconnect(String)
+	case exit
 
-	static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-		value = max(value, nextValue())
+	var id: String {
+		switch self {
+		case .disconnect(let message): return "disconnect-\(message)"
+		case .exit: return "exit"
+		}
 	}
 }
 
@@ -302,13 +306,13 @@ struct ParsecView: View {
 	@AppStorage("mobileGestureHintShown") var mobileGestureHintShown: Bool = false
 	@State var hint: String?
 	@State var showMenu: Bool = false
-	@State var menuRowsHeight: CGFloat = 0
-	@ScaledMetric var menuWidth: CGFloat = 230
 	@AppStorage("menuSwipeHintShown") var menuSwipeHintShown: Bool = false
 
 	@State var showKeyboard: Bool = false
 	@State var zoomEnabled: Bool = false
-	@Environment(\.verticalSizeClass) var verticalSizeClass
+	@State var viewOnly: Bool = false
+	@State var showFullDiagnostics: Bool = false
+	@State var activeAlert: StreamAlert?
 
 	@State var muted: Bool = false
 	@State var preferH265: Bool = true
@@ -428,108 +432,45 @@ struct ParsecView: View {
 					.zIndex(3)
 			}
 
-			HStack(alignment: .top, spacing: 0) {
-				VStack {
-					if !hideOverlay {
-						HStack {
-							Button(action: {
-								if showMenu {
-									showMenu = false
-								} else {
-									showMenu = true
-									ParsecView.getHostUserData()
-								}
-							}) {
-								Image("IconTransparent")
-									.resizable()
-									.aspectRatio(contentMode: .fit)
-									.frame(width: 48, height: 48)
-									.background(Rectangle().fill(Color("BackgroundPrompt").opacity(showMenu ? 0.75 : 1)))
-									.cornerRadius(8)
-									.opacity(showMenu ? 1 : 0.25)
-							}
-							.padding()
-							.edgesIgnoringSafeArea(.all)
-							Spacer()
-						}
-					}
-					if !hideOverlay && !hideKeyboardButton {
-						HStack(spacing: 6) {
-							Button(action: toggleKeyboard) {
-								Image(systemName: "keyboard")
-									.resizable()
-									.aspectRatio(contentMode: .fit)
-									.frame(width: 24, height: 24)
-									.foregroundColor(Color("Foreground"))
-									.frame(width: 44, height: 44)
-									.background(Rectangle().fill(Color("BackgroundPrompt").opacity(showKeyboard ? 0.75 : 0.5)))
-									.cornerRadius(8)
-							}
-							.padding(.leading)
-							.accessibilityLabel(L("keyboard"))
-							Button(action: toggleTouchMode) {
-								Image(systemName: settingsStore.cursorMode == .direct ? "hand.point.up.left" : "computermouse")
-									.resizable()
-									.aspectRatio(contentMode: .fit)
-									.frame(width: 24, height: 24)
-									.foregroundColor(Color("Foreground"))
-									.frame(width: 44, height: 44)
-									.background(Rectangle().fill(Color("BackgroundPrompt").opacity(0.5)))
-									.cornerRadius(8)
-							}
-							.accessibilityLabel(String(format: L("touch_mode_state"), L(settingsStore.cursorMode == .direct ? "direct" : "touchpad")))
-							Button(action: resetViewport) {
-								Image(systemName: "arrow.counterclockwise")
-									.resizable()
-									.aspectRatio(contentMode: .fit)
-									.frame(width: 24, height: 24)
-									.foregroundColor(Color("Foreground"))
-									.frame(width: 44, height: 44)
-									.background(Rectangle().fill(Color("BackgroundPrompt").opacity(0.5)))
-									.cornerRadius(8)
-							}
-							.accessibilityLabel(L("reset_view"))
-							.edgesIgnoringSafeArea(.all)
-							Spacer()
-						}
-					}
-					if showMenu && verticalSizeClass != .compact {
-						HStack {
-							menuPanel
-							Spacer()
-						}
-						.layoutPriority(1)
-					}
-					Spacer()
-				}
-				.fixedSize(horizontal: showMenu && verticalSizeClass == .compact, vertical: false)
-				if showMenu && verticalSizeClass == .compact {
-					menuPanel
-						.padding(.top)
-					Spacer()
-				}
+			if !hideOverlay || showMenu {
+				streamControlPanel
+					.zIndex(2)
 			}
-			.zIndex(2)
 		}
 		.statusBarHidden(SettingsHandler.hideStatusBar)
-		.alert(isPresented: $showDCAlert) {
-			Alert(title: Text(DCAlertText),
-				  primaryButton: .default(Text(L("reconnect")), action: {
-					guard let peerId = ParsecBackgroundManager.shared.lastPeerId else {
-						disconnect()
-						return
-					}
-					if NetworkWatcher.shared.noNetwork {
-						DispatchQueue.main.async {
-							DCAlertText = L("no_network")
-							showDCAlert = true
+		.alert(item: $activeAlert) { alert in
+			switch alert {
+			case .disconnect(let message):
+				return Alert(
+					title: Text(message),
+					primaryButton: .default(Text(L("reconnect")), action: {
+						guard let peerId = ParsecBackgroundManager.shared.lastPeerId else {
+							disconnect()
+							return
 						}
-						return
-					}
-					showDCAlert = false
-					reconnectTo(peerId)
-				  }),
-				  secondaryButton: .cancel(Text(L("close")), action: {disconnect()}))
+						if NetworkWatcher.shared.noNetwork {
+							DCAlertText = L("no_network")
+							activeAlert = .disconnect(L("no_network"))
+							return
+						}
+						activeAlert = nil
+						reconnectTo(peerId)
+					}),
+					secondaryButton: .cancel(Text(L("close")), action: { disconnect() })
+				)
+			case .exit:
+				return Alert(
+					title: Text(L("stream_exit_confirm_title")),
+					message: Text(L("stream_exit_confirm_message")),
+					primaryButton: .destructive(Text(L("stream_exit"))) { disconnect() },
+					secondaryButton: .cancel(Text(L("cancel")))
+				)
+			}
+		}
+		.onChange(of: showDCAlert) { shown in
+			guard shown else { return }
+			showDCAlert = false
+			activeAlert = .disconnect(DCAlertText)
 		}
 		.onChange(of: showSettings) { open in
 			if !open { applyStreamSettings() }
@@ -551,13 +492,11 @@ struct ParsecView: View {
 				}
 			}
 		}
-		.onChange(of: verticalSizeClass) { _ in
-			guard SettingsHandler.streamDisplayMode == .adaptive else { return }
-			parsecViewController.requestAdaptiveResolutionIfNeeded()
-		}
 		.onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-			guard SettingsHandler.streamDisplayMode == .adaptive else { return }
-			parsecViewController.requestAdaptiveResolutionIfNeeded()
+			DispatchQueue.main.async {
+				guard SettingsHandler.streamDisplayMode == .adaptive else { return }
+				parsecViewController.requestAdaptiveResolutionIfNeeded()
+			}
 		}
 		.onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ParsecBackgroundDisconnect"))) { _ in
 			if #available(iOS 15.0, *) {
@@ -572,167 +511,73 @@ struct ParsecView: View {
 
 	}
 
-	var menuPanel: some View {
-		VStack(spacing: 3) {
-			ScrollView {
-				VStack(spacing: 3) {
-					Button(action: disableOverlay) {
-						Text(L("hide_buttons"))
-							.padding(8)
-							.frame(maxWidth: .infinity)
-							.multilineTextAlignment(.center)
-					}
-					Button(action: toggleMute) {
-						Text(String(format: L("sound_state"), L(muted ? "off" : "on")))
-							.padding(8)
-							.frame(maxWidth: .infinity)
-							.multilineTextAlignment(.center)
-					}
-					Menu {
-						ForEach(resolutions, id: \.self) { resolution in
-							Button(action: {
-								changeResolution(res: resolution)
-							}) {
-								if resolution.width == dataModel.requestedResolutionX && resolution.height == dataModel.requestedResolutionY {
-									Label(resolution.desc, systemImage: "checkmark")
-								} else {
-									Text(resolution.desc)
-								}
-							}
-						}
-					} label: {
-						Text(L("resolution"))
-							.padding(8)
-							.frame(maxWidth: .infinity)
-							.multilineTextAlignment(.center)
-					}
-					Menu {
-						Button(action: {
-							changeBitRate(bitrate: 0)
-						}) {
-							if settingsStore.bitrate == 0 {
-								Label(L("host_default"), systemImage: "checkmark")
-							} else {
-								Text(L("host_default"))
-							}
-						}
-						ForEach(bitrates, id: \.self) { bitrate in
-							Button(action: {
-								changeBitRate(bitrate: bitrate)
-							}) {
-								if bitrate == settingsStore.bitrate {
-									Label("\(bitrate) Mbps", systemImage: "checkmark")
-								} else {
-									Text("\(bitrate) Mbps")
-								}
-							}
-						}
-					} label: {
-						Text(L("bitrate"))
-							.padding(8)
-							.frame(maxWidth: .infinity)
-							.multilineTextAlignment(.center)
-					}
-					if DataManager.model.displayConfigs.count > 1 {
-						Menu {
-							Button(L("auto")) {
-								changeDisplay(displayId: "none")
-							}
-							ForEach(DataManager.model.displayConfigs, id: \.self) { config in
-								Button("\(config.name) \(config.adapterName)") {
-									changeDisplay(displayId: config.id)
-								}
-							}
-						} label: {
-							Text(L("switch_display"))
-								.padding(8)
-								.frame(maxWidth: .infinity)
-								.multilineTextAlignment(.center)
-						}
-					}
-
-					Button(action: toggleConstantFps) {
-						Text(String(format: L("constant_frame_rate_state"), L(dataModel.constantFps ? "on" : "off")))
-							.padding(8)
-							.frame(maxWidth: .infinity)
-							.multilineTextAlignment(.center)
-					}
-					Button(action: toggleZoom) {
-						Text(String(format: L("pinch_to_zoom_state"), L(zoomEnabled ? "on" : "off")))
-							.padding(8)
-							.frame(maxWidth: .infinity)
-							.multilineTextAlignment(.center)
-					}
-					Button(action: toggleTouchMode) {
-						Text(String(format: L("touch_mode_state"), L(settingsStore.cursorMode == .direct ? "direct" : "touchpad")))
-							.padding(8)
-							.frame(maxWidth: .infinity)
-							.multilineTextAlignment(.center)
-					}
-					Button(action: toggleTextInputMode) {
-						Text(String(format: L("text_input_state"), L(settingsStore.textInputMode == .text ? "text_input_text" : "text_input_keys")))
-							.padding(8)
-							.frame(maxWidth: .infinity)
-							.multilineTextAlignment(.center)
-					}
-					Button(action: rightClick) {
-						Text(L("right_click_now"))
-							.padding(8)
-							.frame(maxWidth: .infinity)
-							.multilineTextAlignment(.center)
-					}
-					Button(action: resetViewport) {
-						Text(L("reset_view"))
-							.padding(8)
-							.frame(maxWidth: .infinity)
-							.multilineTextAlignment(.center)
-					}
-					Button(action: toggleDisplayMode) {
-						Text(String(format: L("display_mode_state"), L(settingsStore.streamDisplayMode == .adaptive ? "display_fill" : "display_fit")))
-							.padding(8)
-							.frame(maxWidth: .infinity)
-							.multilineTextAlignment(.center)
-					}
-					if settingsStore.streamDisplayMode == .adaptive {
-						Text(adaptiveStatusText)
-							.font(.system(size: 11))
-							.foregroundColor(.secondary)
-							.padding(.horizontal, 8)
-							.padding(.bottom, 4)
-							.frame(maxWidth: .infinity)
-							.multilineTextAlignment(.center)
-					}
-					Button(action: openSettings) {
-						Text(L("settings"))
-							.padding(8)
-							.frame(maxWidth: .infinity)
-							.multilineTextAlignment(.center)
-					}
-				}
-				.background(GeometryReader { proxy in
-					Color.clear.preference(key: MenuRowsHeightKey.self, value: proxy.size.height)
-				})
-			}
-			.frame(maxHeight: min(menuRowsHeight, UIScreen.main.bounds.height * 0.58))
-			.onPreferenceChange(MenuRowsHeightKey.self) { menuRowsHeight = $0 }
-			Rectangle()
-				.fill(Color("Foreground"))
-				.opacity(0.25)
-				.frame(height: 1)
-			Button(action: { disconnect()}) {
-				Text(L("disconnect"))
-					.foregroundColor(.red)
-					.padding(8)
-					.frame(maxWidth: .infinity)
-					.multilineTextAlignment(.center)
-			}
-		}
-		.background(Rectangle().fill(Color("BackgroundPrompt").opacity(0.75)))
-		.foregroundColor(Color("Foreground"))
-		.frame(maxWidth: menuWidth)
-		.cornerRadius(8)
-		.padding(.horizontal)
-		// .edgesIgnoringSafeArea(.all)
+	var streamControlPanel: some View {
+		StreamControlPanel(
+			cursorMode: Binding(
+				get: { settingsStore.cursorMode },
+				set: { setCursorMode($0) }
+			),
+			virtualMouseEnabled: Binding(
+				get: { settingsStore.virtualMouseEnabled },
+				set: { setVirtualMouseEnabled($0) }
+			),
+			virtualMouseScale: Binding(
+				get: { settingsStore.virtualMouseScale },
+				set: { setVirtualMouseScale($0) }
+			),
+			resolution: Binding(
+				get: { settingsStore.resolution },
+				set: { changeResolution(res: $0) }
+			),
+			bitrate: Binding(
+				get: { settingsStore.bitrate },
+				set: { changeBitRate(bitrate: $0) }
+			),
+			showFullDiagnostics: $showFullDiagnostics,
+			resolutions: resolutions,
+			bitrates: bitrates,
+			state: StreamControlState(
+				isOpen: showMenu,
+				isViewOnly: viewOnly,
+				isMuted: muted,
+				keyboardVisible: showKeyboard,
+				isAdaptiveDisplay: settingsStore.streamDisplayMode == .adaptive,
+				isPinchZoomEnabled: zoomEnabled,
+				isConstantFps: dataModel.constantFps,
+				isKeyboardButtonVisible: !settingsStore.noOverlay && settingsStore.showKeyboardButton,
+				textInputMode: settingsStore.textInputMode,
+				displays: dataModel.displayConfigs,
+				selectedDisplay: dataModel.output,
+				adaptiveStatus: settingsStore.streamDisplayMode == .adaptive ? adaptiveStatusText : nil,
+				diagnosticsSummary: diagnosticsSummary,
+				fullDiagnostics: diagnosticsFull
+			),
+			actions: StreamControlActions(
+				setOpen: { open in setPanelOpen(open) },
+				setCursorMode: { mode in setCursorMode(mode) },
+				toggleVirtualMouse: { setVirtualMouseEnabled(!settingsStore.virtualMouseEnabled) },
+				setVirtualMouseScale: { scale in setVirtualMouseScale(scale) },
+				resetVirtualMousePosition: { resetVirtualMousePosition() },
+				setResolution: { resolution in changeResolution(res: resolution) },
+				setBitrate: { bitrate in changeBitRate(bitrate: bitrate) },
+				setDisplay: { id in changeDisplay(displayId: id) },
+				toggleMute: { toggleMute() },
+				toggleViewOnly: { toggleViewOnly() },
+				resetView: { resetViewport() },
+				openSettings: { openSettings() },
+				toggleDisplayMode: { toggleDisplayMode() },
+				toggleZoom: { toggleZoom() },
+				toggleConstantFps: { toggleConstantFps() },
+				setTextInputMode: { mode in setTextInputMode(mode) },
+				rightClick: { rightClick() },
+				hideButtons: { disableOverlay() },
+				toggleKeyboard: { toggleKeyboard() },
+				showDesktop: { sendSystemShortcut(.showDesktop) },
+				switchWindow: { sendSystemShortcut(.switchWindow) },
+				exit: { activeAlert = .exit }
+			)
+		)
+		.allowsHitTesting(!hideOverlay || showMenu)
 	}
 
 	var overlayTitle: String {
@@ -751,14 +596,36 @@ struct ParsecView: View {
 	var adaptiveStatusText: String {
 		switch dataModel.adaptiveRequestState {
 		case .inactive:
-			return "自适应：关闭"
+			return L("stream_adaptive_off")
 		case .waiting(let target, _):
-			return "自适应：等待 \(target.width)×\(target.height)"
+			return String(format: L("stream_adaptive_waiting"), "\(target.width)×\(target.height)")
 		case .matched(let target):
-			return "自适应：已匹配 \(target.width)×\(target.height)"
+			return String(format: L("stream_adaptive_matched"), "\(target.width)×\(target.height)")
 		case .unmatched(let target):
-			return "尚未收到匹配 \(target.width)×\(target.height) 的画面。请检查网络，并在主机“设置 → 主机 → 分辨率”选择跟随客户端，确认显示器支持该模式；当前保持等比完整"
+			return String(format: L("stream_adaptive_unmatched"), "\(target.width)×\(target.height)")
 		}
+	}
+
+	var diagnosticsSummary: String? {
+		guard settingsStore.streamDisplayMode == .adaptive else { return nil }
+		let frame = dataModel.actualFrameWidth > 0
+			? "\(dataModel.actualFrameWidth)×\(dataModel.actualFrameHeight)"
+			: "-"
+		let decoder = dataModel.decoderWidth > 0
+			? "\(dataModel.decoderWidth)×\(dataModel.decoderHeight)"
+			: "-"
+		return String(format: L("stream_diagnostics_summary"), frame, decoder, CParsec.drawRate)
+	}
+
+	var diagnosticsFull: String? {
+		guard settingsStore.streamDisplayMode == .adaptive else { return nil }
+		let requested = dataModel.requestedResolutionX > 0
+			? "\(dataModel.requestedResolutionX)×\(dataModel.requestedResolutionY)"
+			: "-"
+		let picture = dataModel.pictureWidth > 0
+			? "\(dataModel.pictureX),\(dataModel.pictureY) \(dataModel.pictureWidth)×\(dataModel.pictureHeight)"
+			: "-"
+		return "请求 \(requested)\n视口 \(dataModel.viewportWidth)×\(dataModel.viewportHeight)\n画面矩形 \(picture)"
 	}
 
 	func post() {
@@ -834,6 +701,9 @@ struct ParsecView: View {
 		hideOverlay = SettingsHandler.noOverlay
 		hideKeyboardButton = !SettingsHandler.showKeyboardButton
 		parsecViewController.updateMenuEdgeSwipe(menuHidden: hideOverlay)
+		parsecViewController.applyVirtualMouseSettings()
+		parsecViewController.setInteractionEnabled(!viewOnly)
+		parsecViewController.setVirtualMouseSuspended(!SettingsHandler.virtualMouseEnabled || viewOnly || hideOverlay)
 		offerHint()
 
 		let overlayHidden = $hideOverlay
@@ -843,6 +713,8 @@ struct ParsecView: View {
 			overlayHidden.wrappedValue = false
 			keyboardButtonHidden.wrappedValue = !SettingsHandler.showKeyboardButton
 			menuShown.wrappedValue = true
+			parsecViewController.releaseMobileInteractions()
+			parsecViewController.setVirtualMouseSuspended(true)
 			ParsecView.getHostUserData()
 		}
 
@@ -871,7 +743,8 @@ struct ParsecView: View {
 		pipAtOpen = SettingsHandler.enablePiP
 		resolutionAtOpen = SettingsHandler.resolution
 		bitrateAtOpen = SettingsHandler.bitrate
-		showMenu = false
+		setPanelOpen(false)
+		parsecViewController.setVirtualMouseSuspended(true)
 		if showKeyboard { toggleKeyboard() }
 		withAnimation(.easeInOut(duration: 0.24)) { showSettings = true }
 	}
@@ -893,9 +766,14 @@ struct ParsecView: View {
 		parsecViewController.requestAdaptiveResolutionIfNeeded()
 		parsecViewController.updatePanHandle()
 		parsecViewController.positionCursorOverlay()
+		parsecViewController.applyVirtualMouseSettings()
+		parsecViewController.setVirtualMouseSuspended(viewOnly
+			|| !SettingsHandler.virtualMouseEnabled
+			|| hideOverlay)
 		hideOverlay = SettingsHandler.noOverlay
 		hideKeyboardButton = !SettingsHandler.showKeyboardButton
 		parsecViewController.updateMenuEdgeSwipe(menuHidden: hideOverlay)
+		parsecViewController.setInteractionEnabled(!viewOnly)
 		offerHint()
 		if SettingsHandler.clipboardSync { ClipboardSync.shared.start() } else { ClipboardSync.shared.stop() }
 
@@ -939,9 +817,32 @@ struct ParsecView: View {
 	func disableOverlay() {
 		hideOverlay = true
 		hideKeyboardButton = true
-		showMenu = false
+		parsecViewController.setVirtualMouseSuspended(true)
+		setPanelOpen(false)
 		parsecViewController.updateMenuEdgeSwipe(menuHidden: true)
 		offerHint(always: true)
+	}
+
+	func restoreOverlay() {
+		hideOverlay = false
+		hideKeyboardButton = !SettingsHandler.showKeyboardButton
+		parsecViewController.setVirtualMouseSuspended(!SettingsHandler.virtualMouseEnabled || viewOnly)
+		parsecViewController.updateMenuEdgeSwipe(menuHidden: false)
+	}
+
+	func setPanelOpen(_ open: Bool) {
+		parsecViewController.releaseMobileInteractions()
+		if open && showKeyboard {
+			showKeyboard = false
+			parsecViewController.setKeyboardVisible(false)
+		}
+		showMenu = open
+		parsecViewController.setVirtualMouseSuspended(open || viewOnly
+			|| !SettingsHandler.virtualMouseEnabled || hideOverlay)
+		if open {
+			showFullDiagnostics = false
+			ParsecView.getHostUserData()
+		}
 	}
 
 	func offerHint(always: Bool = false) {
@@ -1006,6 +907,8 @@ struct ParsecView: View {
 	}*/
 
 	func disconnect(isBackgroundDisconnect: Bool = false) {
+		parsecViewController.releaseMobileInteractions()
+		parsecViewController.setVirtualMouseSuspended(true)
 		appNote("[stream] disconnect\(isBackgroundDisconnect ? " in the background" : "")")
 		if !isBackgroundDisconnect {
 			ParsecBackgroundManager.shared.endSession()
@@ -1074,6 +977,8 @@ struct ParsecView: View {
 
 	func toggleKeyboard() {
 		DispatchQueue.main.async {
+			guard !viewOnly else { return }
+			if !showKeyboard { setPanelOpen(false) }
 			showKeyboard.toggle()
 			parsecViewController.setKeyboardVisible(showKeyboard)
 		}
@@ -1094,6 +999,57 @@ struct ParsecView: View {
 		}
 	}
 
+	func setCursorMode(_ mode: CursorMode) {
+		guard mode != SettingsHandler.cursorMode else { return }
+		parsecViewController.releaseMobileInteractions()
+		SettingsHandler.cursorMode = mode
+		parsecViewController.updatePanHandle()
+	}
+
+	func setVirtualMouseEnabled(_ enabled: Bool) {
+		SettingsHandler.virtualMouseEnabled = enabled
+		parsecViewController.applyVirtualMouseSettings()
+		parsecViewController.setVirtualMouseSuspended(showMenu || !enabled || viewOnly || hideOverlay)
+	}
+
+	func setVirtualMouseScale(_ scale: Double) {
+		SettingsHandler.virtualMouseScale = scale
+		parsecViewController.applyVirtualMouseSettings()
+	}
+
+	func resetVirtualMousePosition() {
+		SettingsHandler.virtualMousePositionX = 0.8
+		SettingsHandler.virtualMousePositionY = 0.65
+		parsecViewController.applyVirtualMouseSettings()
+	}
+
+	func toggleViewOnly() {
+		viewOnly.toggle()
+		parsecViewController.setVirtualMouseSuspended(showMenu || viewOnly || !SettingsHandler.virtualMouseEnabled || hideOverlay)
+		parsecViewController.setInteractionEnabled(!viewOnly)
+		if !viewOnly {
+			parsecViewController.setVirtualMouseSuspended(showMenu || !SettingsHandler.virtualMouseEnabled || hideOverlay)
+		}
+		let message = L(viewOnly ? "stream_view_only_hint" : "stream_view_only_restored")
+		withAnimation { hint = message }
+		DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+			if hint == message {
+				withAnimation { hint = nil }
+			}
+		}
+	}
+
+	func setTextInputMode(_ mode: TextInputMode) {
+		guard mode != settingsStore.textInputMode else { return }
+		toggleTextInputMode()
+	}
+
+	func sendSystemShortcut(_ shortcut: RemoteSystemShortcut) {
+		guard !viewOnly, UIApplication.shared.applicationState == .active,
+			  ParsecBackgroundManager.shared.hasActiveConnection else { return }
+		CParsec.sendSystemShortcut(shortcut)
+	}
+
 	func toggleTextInputMode() {
 		DispatchQueue.main.async {
 			CParsec.cancelPendingTextInput()
@@ -1107,7 +1063,7 @@ struct ParsecView: View {
 	}
 
 	func rightClick() {
-		showMenu = false
+		setPanelOpen(false)
 		DispatchQueue.main.async {
 			guard UIApplication.shared.applicationState == .active,
 				  ParsecBackgroundManager.shared.hasActiveConnection else { return }

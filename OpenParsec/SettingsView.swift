@@ -82,6 +82,39 @@ struct SettingsView: View {
 										.frame(width: 80)
 								}
 							}
+							CatTitle(L("stream_virtual_mouse"))
+							CatList {
+								CatItem(L("stream_virtual_mouse")) {
+									Toggle("", isOn: $settings.virtualMouseEnabled)
+										.frame(width: 80)
+								}
+								if settings.virtualMouseEnabled {
+									CatSlider(
+										L("stream_virtual_mouse_size"),
+										value: Binding(
+											get: { settings.virtualMouseScale },
+											set: {
+												settings.virtualMouseScale = SettingsHandler.clampVirtualMouseScale($0)
+											}
+										),
+										in: Double(VirtualMouseConfiguration.minimumScale)...Double(VirtualMouseConfiguration.maximumScale),
+										step: 0.02
+									)
+									Button(action: {
+										SettingsHandler.virtualMousePositionX = 0.8
+										SettingsHandler.virtualMousePositionY = 0.65
+									}) {
+										Text(L("stream_virtual_mouse_reset_position"))
+											.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+									}
+								}
+								Text(L("stream_virtual_mouse_help"))
+									.font(.system(size: 12))
+									.foregroundColor(.secondary)
+									.fixedSize(horizontal: false, vertical: true)
+									.padding(.horizontal)
+									.padding(.top, 4)
+							}
 							CatTitle(L("keyboard"))
 							CatList {
 								CatItem(L("text_input_mode")) {

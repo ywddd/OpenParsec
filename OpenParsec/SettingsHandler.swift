@@ -25,6 +25,10 @@ final class SettingsStore: ObservableObject {
 			"preferredFramesPerSecond": 60,
 			"showKeyboardButton": true,
 			"alwaysShowStatus": false,
+			"virtualMouseEnabled": true,
+			"virtualMouseScale": 1.0,
+			"virtualMousePositionX": 0.8,
+			"virtualMousePositionY": 0.65,
 			"enablePiP": false,
 			"startMuted": false,
 			"clipboardSync": false,
@@ -150,6 +154,26 @@ final class SettingsStore: ObservableObject {
 		set { store(newValue, "alwaysShowStatus") }
 	}
 
+	var virtualMouseEnabled: Bool {
+		get { defaults.bool(forKey: "virtualMouseEnabled") }
+		set { store(newValue, "virtualMouseEnabled") }
+	}
+
+	var virtualMouseScale: Double {
+		get { SettingsHandler.clampVirtualMouseScale(defaults.double(forKey: "virtualMouseScale")) }
+		set { store(SettingsHandler.clampVirtualMouseScale(newValue), "virtualMouseScale") }
+	}
+
+	var virtualMousePositionX: Double {
+		get { SettingsHandler.clampNormalizedPosition(defaults.double(forKey: "virtualMousePositionX")) }
+		set { store(SettingsHandler.clampNormalizedPosition(newValue), "virtualMousePositionX") }
+	}
+
+	var virtualMousePositionY: Double {
+		get { SettingsHandler.clampNormalizedPosition(defaults.double(forKey: "virtualMousePositionY")) }
+		set { store(SettingsHandler.clampNormalizedPosition(newValue), "virtualMousePositionY") }
+	}
+
 	var enablePiP: Bool {
 		get { defaults.bool(forKey: "enablePiP") }
 		set { store(newValue, "enablePiP") }
@@ -217,6 +241,10 @@ struct SettingsHandler {
 	static var preferredFramesPerSecond: Int { get { SettingsStore.shared.preferredFramesPerSecond } set { SettingsStore.shared.preferredFramesPerSecond = newValue } }
 	static var showKeyboardButton: Bool { get { SettingsStore.shared.showKeyboardButton } set { SettingsStore.shared.showKeyboardButton = newValue } }
 	static var alwaysShowStatus: Bool { get { SettingsStore.shared.alwaysShowStatus } set { SettingsStore.shared.alwaysShowStatus = newValue } }
+	static var virtualMouseEnabled: Bool { get { SettingsStore.shared.virtualMouseEnabled } set { SettingsStore.shared.virtualMouseEnabled = newValue } }
+	static var virtualMouseScale: Double { get { SettingsStore.shared.virtualMouseScale } set { SettingsStore.shared.virtualMouseScale = newValue } }
+	static var virtualMousePositionX: Double { get { SettingsStore.shared.virtualMousePositionX } set { SettingsStore.shared.virtualMousePositionX = newValue } }
+	static var virtualMousePositionY: Double { get { SettingsStore.shared.virtualMousePositionY } set { SettingsStore.shared.virtualMousePositionY = newValue } }
 	static var enablePiP: Bool { get { SettingsStore.shared.enablePiP } set { SettingsStore.shared.enablePiP = newValue } }
 	static var startMuted: Bool { get { SettingsStore.shared.startMuted } set { SettingsStore.shared.startMuted = newValue } }
 	static var clipboardSync: Bool { get { SettingsStore.shared.clipboardSync } set { SettingsStore.shared.clipboardSync = newValue } }
@@ -226,4 +254,13 @@ struct SettingsHandler {
 	static var autoConnectOnLaunch: Bool { get { SettingsStore.shared.autoConnectOnLaunch } set { SettingsStore.shared.autoConnectOnLaunch = newValue } }
 	static var zoomEnabled: Bool { get { SettingsStore.shared.zoomEnabled } set { SettingsStore.shared.zoomEnabled = newValue } }
 	static var constantFps: Bool { get { SettingsStore.shared.constantFps } set { SettingsStore.shared.constantFps = newValue } }
+
+	static func clampVirtualMouseScale(_ value: Double) -> Double {
+		min(Double(VirtualMouseConfiguration.maximumScale),
+			max(Double(VirtualMouseConfiguration.minimumScale), value.isFinite ? value : 1.0))
+	}
+
+	static func clampNormalizedPosition(_ value: Double) -> Double {
+		min(1, max(0, value.isFinite ? value : 0.5))
+	}
 }

@@ -3,6 +3,11 @@ import SwiftUI
 import CoreGraphics
 import GLKit
 
+enum RemoteSystemShortcut {
+	case showDesktop
+	case switchWindow
+}
+
 enum ParsecResolution: String, CaseIterable, Hashable {
 	case host = "host_resolution"
 	case client = "client_resolution" // updated dynamically during connection
@@ -169,6 +174,7 @@ protocol ParsecService {
 	func sendWheelMsg(x: Int32, y: Int32)
 	func sendUserData(type: ParsecUserDataType, message: Data)
 	func sendReleaseMessage()
+	func setInteractionEnabled(_ enabled: Bool)
 	func reconnect(_ peerID: String) -> ParsecStatus
 	func pause(video: Bool, audio: Bool) -> ParsecStatus
 	func resume() -> ParsecStatus
@@ -333,6 +339,33 @@ class CParsec {
 
 	static func sendReleaseMessage() {
 		parsecImpl.sendReleaseMessage()
+	}
+
+	static func setInteractionEnabled(_ enabled: Bool) {
+		parsecImpl.setInteractionEnabled(enabled)
+	}
+
+	static func sendSystemShortcut(_ shortcut: RemoteSystemShortcut) {
+		let isWindowsHost = SettingsHandler.textPasteShortcut != .commandV
+		let commandKey: UInt32 = 227
+		let altKey: UInt32 = 226
+		let tabKey: UInt32 = 43
+		let f3Key: UInt32 = 60
+		let chord: (modifier: UInt32, key: UInt32)
+		switch shortcut {
+		case .showDesktop:
+			chord = isWindowsHost
+				? (commandKey, KeyCodeTranslators.parsecKeyCodeTranslator("D")?.rawValue ?? 7)
+				: (commandKey, f3Key)
+		case .switchWindow:
+			chord = isWindowsHost
+				? (altKey, tabKey)
+				: (commandKey, tabKey)
+		}
+		sendKeyboardMessage(keyCode: chord.modifier, pressed: true)
+		sendKeyboardMessage(keyCode: chord.key, pressed: true)
+		sendKeyboardMessage(keyCode: chord.key, pressed: false)
+		sendKeyboardMessage(keyCode: chord.modifier, pressed: false)
 	}
 
 	@discardableResult

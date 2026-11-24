@@ -134,6 +134,7 @@ class ParsecSDKBridge: ParsecService {
 
 	private var isVirtualShiftOn = false
 	private var toolbarModifierCodes: Set<UInt32> = []
+	private var interactionEnabled = true
 
 	public var clientWidth: Float = 1920
 	public var clientHeight: Float = 1080
@@ -587,6 +588,19 @@ class ParsecSDKBridge: ParsecService {
 		}
 	}
 
+	func setInteractionEnabled(_ enabled: Bool) {
+		guard interactionEnabled != enabled else { return }
+		interactionEnabled = enabled
+		if !enabled {
+			cancelPendingTextInput()
+			var msg = ParsecMessage()
+			msg.type = MESSAGE_RELEASE
+			ParsecClientSendMessage(_parsec, &msg)
+			isVirtualShiftOn = false
+			notifyInputReleased()
+		}
+	}
+
 	@discardableResult
 	func pause(video: Bool = true, audio: Bool = true) -> ParsecStatus {
 		let status = ParsecClientPause(_parsec, video, audio)
@@ -893,6 +907,7 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	func sendMouseMessage(_ button: ParsecMouseButton, _ x: Int32, _ y: Int32, _ pressed: Bool) {
+		guard interactionEnabled else { return }
 		// Send the mouse position
 		sendMousePosition(x, y)
 
@@ -905,6 +920,7 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	func sendMouseMessage(_ button: ParsecMouseButton, viewportPoint: CGPoint, _ pressed: Bool) {
+		guard interactionEnabled else { return }
 		sendMousePosition(viewportPoint: viewportPoint)
 		var buttonMessage = ParsecMessage()
 		buttonMessage.type = MESSAGE_MOUSE_BUTTON
@@ -914,6 +930,7 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	func sendMouseClickMessage(_ button: ParsecMouseButton, _ pressed: Bool) {
+		guard interactionEnabled || !pressed else { return }
 		var buttonMessage = ParsecMessage()
 		buttonMessage.type = MESSAGE_MOUSE_BUTTON
 		buttonMessage.mouseButton.button = button
@@ -922,6 +939,7 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	func sendMouseDelta(_ dx: Int32, _ dy: Int32) {
+		guard interactionEnabled else { return }
 		if mouseInfo.mousePositionRelative {
 			sendMouseRelativeMove(dx, dy)
 		} else {
@@ -934,6 +952,7 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	func sendMousePosition(_ x: Int32, _ y: Int32) {
+		guard interactionEnabled else { return }
 		let sdkPoint = CGPoint(
 			x: CGFloat(ParsecSDKBridge.clamp(x, minValue: 0, maxValue: Int32(self.clientWidth))),
 			y: CGFloat(ParsecSDKBridge.clamp(y, minValue: 0, maxValue: Int32(self.clientHeight)))
@@ -944,6 +963,7 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	func sendMousePosition(viewportPoint: CGPoint) {
+		guard interactionEnabled else { return }
 		let actualGeometry = StreamGeometry(
 			viewportSize: CGSize(width: CGFloat(clientWidth), height: CGFloat(clientHeight)),
 			hostSize: actualHostSize
@@ -967,6 +987,7 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	func sendMouseRelativeMove(_ dx: Int32, _ dy: Int32) {
+		guard interactionEnabled else { return }
 		var motionMessage = ParsecMessage()
 		motionMessage.type = MESSAGE_MOUSE_MOTION
 		motionMessage.mouseMotion.x = dx
@@ -1006,6 +1027,7 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	func sendVirtualKeyboardInput(text: String) {
+		guard interactionEnabled else { return }
 		switch RemoteInputPolicy.makeNamedKeyPlan(key: text, shortcut: SettingsHandler.textPasteShortcut) {
 		case .success(let plan):
 			enqueueTextPlan(plan)
@@ -1120,7 +1142,7 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	private func sendQueuedTextAction(_ action: QueuedTextInput, generation: Int) {
-		guard generation == textInputGeneration else { return }
+		guard interactionEnabled, generation == textInputGeneration else { return }
 		guard UIApplication.shared.applicationState == .active,
 			  ParsecBackgroundManager.shared.hasActiveConnection,
 			  getStatus() == PARSEC_OK else {
@@ -1141,7 +1163,9 @@ class ParsecSDKBridge: ParsecService {
 				guard let base = buffer.baseAddress?.assumingMemoryBound(to: CChar.self) else {
 					return PARSEC_NOT_RUNNING
 				}
-				return ParsecClientSendUserData(_parsec, ParsecUserDataType.clipboard.rawValue, base)
+				return self.interactionEnabled
+					? ParsecClientSendUserData(_parsec, ParsecUserDataType.clipboard.rawValue, base)
+					: PARSEC_NOT_RUNNING
 			}
 			guard status == PARSEC_OK else {
 				cancelPendingTextInput()
@@ -1171,6 +1195,7 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	private func sendTextKey(_ code: UInt32, pressed: Bool) {
+		guard interactionEnabled || !pressed else { return }
 		textInputLock.lock()
 		if pressed {
 			textHeldKeyCodes.insert(code)
@@ -1211,6 +1236,7 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	func sendTextInput(text: String) {
+		guard interactionEnabled else { return }
 		guard text.isEmpty == false else { return }
 		let mode = SettingsHandler.textInputMode
 		let shortcut = SettingsHandler.textPasteShortcut
@@ -1243,6 +1269,7 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	func sendVirtualKeyboardInput(text: String, isOn: Bool) {
+		guard interactionEnabled || !isOn else { return }
 		let (keyCode, _) = getKeyCodeByText(text: text)
 
 		guard let keyCode else {
@@ -1274,6 +1301,7 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	func sendKeyboardMessage(event: KeyBoardKeyEvent) {
+		guard interactionEnabled || !event.isPressBegin else { return }
 		if event.input == nil {
 			return
 		}
@@ -1289,6 +1317,7 @@ class ParsecSDKBridge: ParsecService {
 
 	func sendKeyboardMessage(keyCode: UInt32, pressed: Bool)
 	{
+		guard interactionEnabled || !pressed else { return }
 		var keyboardMessagePress = ParsecMessage()
 		keyboardMessagePress.type = MESSAGE_KEYBOARD
 		keyboardMessagePress.keyboard.code = ParsecKeycode(keyCode)
@@ -1299,6 +1328,7 @@ class ParsecSDKBridge: ParsecService {
 	
 	func sendGameControllerButtonMessage(controllerId: UInt32, _ button:ParsecGamepadButton, pressed: Bool)
 	{
+		guard interactionEnabled else { return }
 		var pmsg = ParsecMessage()
 		pmsg.type = MESSAGE_GAMEPAD_BUTTON
 		pmsg.gamepadButton.id = controllerId
@@ -1318,6 +1348,7 @@ class ParsecSDKBridge: ParsecService {
 	}*/
 
 	func sendGameControllerAxisMessage(controllerId: UInt32, _ button: ParsecGamepadAxis, _ value: Int16) {
+		guard interactionEnabled else { return }
 	    var pmsg = ParsecMessage()
 		pmsg.type = MESSAGE_GAMEPAD_AXIS
 		pmsg.gamepadAxis.id = controllerId
@@ -1334,6 +1365,7 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	func sendWheelMsg(x: Int32, y: Int32) {
+		guard interactionEnabled else { return }
 		var pmsg = ParsecMessage()
 		pmsg.type = MESSAGE_MOUSE_WHEEL
 		pmsg.mouseWheel.x = x
@@ -1368,6 +1400,10 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	func sendUserData(type: ParsecUserDataType, message: Data) {
+		guard interactionEnabled
+			|| type == .getVideoConfig
+			|| type == .getAdapterInfo
+			|| type == .setVideoConfig else { return }
         var nullTerminatedMessage = message
         nullTerminatedMessage.append(0)
 		nullTerminatedMessage.withUnsafeBytes { ptr in

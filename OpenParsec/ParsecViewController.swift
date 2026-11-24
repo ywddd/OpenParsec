@@ -71,6 +71,15 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	// Input-driven cursor + viewport state (manual touch handling via TouchOverlayView).
 	var touchOverlay: TouchOverlayView!
 	var cursorContentPos: CGPoint = .zero
+	var virtualMouseOverlay: VirtualMouseOverlay?
+	var virtualMouseConfiguration = VirtualMouseConfiguration(
+		enabled: true,
+		scale: VirtualMouseConfiguration.defaultScale,
+		normalizedPosition: VirtualMouseConfiguration.defaultPosition
+	)
+	var virtualMouseSuspendedOverride = false
+	var interactionEnabled = true
+	var virtualMouseFallbackCursor = false
 	var isDragging = false
 	var twoFingerResidual = false       // leftover finger after a 2-finger gesture; inert until full lift
 	var activeTouches: [UITouch] = []   // ordered; first two drive pinch / scroll
@@ -95,6 +104,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	private var keyBarDone: UIButton?
 	private var panStartOffset: CGPoint = .zero
 	private var keyboardCoversPicture = false
+	private var virtualMousePointerView: UIView?
 	var onKeyboardVisibilityChanged: ((Bool) -> Void)?
 	var onMenuEdgeSwipe: (() -> Void)?
 	var menuEdgeSwipe: UIScreenEdgePanGestureRecognizer?
@@ -216,8 +226,14 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 				}
 			}
 		} else {
-			u?.isHidden = true
+			u?.isHidden = !shouldShowVirtualMouseFallbackCursor
 		}
+	}
+
+	private var shouldShowVirtualMouseFallbackCursor: Bool {
+		guard let overlay = virtualMouseOverlay, !overlay.isHidden,
+			  overlay.presentation?.isCollapsed == false else { return false }
+		return CParsec.mouseInfo.cursorHidden || CParsec.mouseInfo.cursorImg == nil
 	}
 
 	func applyFrameRate() {
@@ -234,6 +250,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 
 	func applyDisplayMode() {
 		guard scrollView != nil else { return }
+		virtualMouseOverlay?.releaseAll()
 		syncDisplayModeToRenderers()
 		stopMomentum()
 		manualViewportAdjustment = false
@@ -348,12 +365,25 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		view.addSubview(responder)
 		textInputView = responder
 		responderMode = SettingsHandler.textInputMode
+		installVirtualMouseOverlay()
 
 		// Cursor is a screen-space overlay ON TOP of everything (not inside the scroll view), so the
 		// zoom transform never scales it - keeping it crisp and a constant on-screen size.
 		u = UIImageView(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
 		u!.isUserInteractionEnabled = false
 		view.addSubview(u!)
+		let virtualPointer = UIView(frame: CGRect(x: 0, y: 0, width: 22, height: 22))
+		virtualPointer.backgroundColor = .clear
+		virtualPointer.isUserInteractionEnabled = false
+		virtualPointer.layer.cornerRadius = 11
+		virtualPointer.layer.borderWidth = 2
+		virtualPointer.layer.borderColor = UIColor.white.cgColor
+		virtualPointer.layer.shadowColor = UIColor.black.cgColor
+		virtualPointer.layer.shadowOpacity = 0.7
+		virtualPointer.layer.shadowRadius = 3
+		virtualPointer.isHidden = true
+		view.addSubview(virtualPointer)
+		virtualMousePointerView = virtualPointer
 
 		setNeedsUpdateOfPrefersPointerLocked()
 
@@ -434,11 +464,173 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 			name: UIApplication.willResignActiveNotification,
 			object: nil
 		)
+		NotificationCenter.default.addObserver(self, selector: #selector(appDidBecomeActive),
+			name: UIApplication.didBecomeActiveNotification, object: nil)
 
+	}
+
+	private func installVirtualMouseOverlay() {
+		let overlay = VirtualMouseOverlay(frame: .zero)
+		overlay.onMove = { [weak self] delta in
+			self?.moveVirtualMouse(by: delta)
+		}
+		overlay.onButton = { [weak self] button, pressed in
+			self?.sendVirtualMouseButton(button, pressed: pressed)
+		}
+		overlay.onScroll = { [weak self] units in
+			self?.sendVirtualMouseScroll(units)
+		}
+		overlay.onPositionChanged = { [weak self] position in
+			self?.virtualMouseConfiguration.normalizedPosition = position
+			SettingsHandler.virtualMousePositionX = Double(position.x)
+			SettingsHandler.virtualMousePositionY = Double(position.y)
+			self?.updateVirtualMouseVisibility()
+		}
+		overlay.onScaleChanged = { [weak self] scale in
+			self?.virtualMouseConfiguration.scale = scale
+			SettingsHandler.virtualMouseScale = Double(scale)
+			self?.updateVirtualMouseVisibility()
+		}
+		overlay.onCollapsedChanged = { collapsed in
+			UserDefaults.standard.set(collapsed, forKey: "virtualMouseCollapsed")
+		}
+		view.addSubview(overlay)
+		virtualMouseOverlay = overlay
+		applyVirtualMouseSettings()
+	}
+
+	func applyVirtualMouseSettings() {
+		let enabled = SettingsHandler.virtualMouseEnabled
+		let scale = SettingsHandler.virtualMouseScale
+		let x = SettingsHandler.virtualMousePositionX
+		let y = SettingsHandler.virtualMousePositionY
+		let collapsed = UserDefaults.standard.object(forKey: "virtualMouseCollapsed") as? Bool ?? false
+		virtualMouseConfiguration = VirtualMouseConfiguration(
+			enabled: enabled,
+			scale: CGFloat(scale),
+			normalizedPosition: CGPoint(x: x, y: y)
+		)
+		guard let overlay = virtualMouseOverlay else { return }
+		overlay.configuration = virtualMouseConfiguration
+		overlay.setCollapsed(collapsed)
+		updateVirtualMouseVisibility()
+	}
+
+	func releaseMobileInteractions() {
+		flushAllTouches()
+		resetKeyState()
+	}
+
+	func setVirtualMouseSuspended(_ suspended: Bool) {
+		virtualMouseSuspendedOverride = suspended
+		updateVirtualMouseVisibility()
+	}
+
+	func setInteractionEnabled(_ enabled: Bool) {
+		interactionEnabled = enabled
+		CParsec.setInteractionEnabled(enabled)
+		flushAllTouches()
+		resetKeyState()
+		if !enabled { setKeyboardVisible(false) }
+		virtualMouseOverlay?.releaseAll()
+		textInputView?.resetComposition()
+		CParsec.cancelPendingTextInput()
+		updateVirtualMouseVisibility()
+	}
+
+	private func updateVirtualMouseVisibility() {
+		guard let overlay = virtualMouseOverlay else { return }
+		let connected = ParsecBackgroundManager.shared.hasActiveConnection
+		let active = UIApplication.shared.applicationState == .active
+		let hidden = !interactionEnabled || virtualMouseSuspendedOverride
+			|| !virtualMouseConfiguration.enabled || !connected || !active
+		if hidden != overlay.isHidden {
+			overlay.setSuspended(hidden)
+		}
+		overlay.usableRect = view.bounds
+		overlay.safeInsets = virtualMouseInsets()
+		overlay.configuration = virtualMouseConfiguration
+		overlay.setNeedsLayout()
+		positionCursorOverlay()
+	}
+
+	private func virtualMouseInsets() -> VirtualMouseInsets {
+		let safe = view.safeAreaInsets
+		var insets = VirtualMouseInsets(
+			top: safe.top + 8,
+			left: safe.left + 8,
+			bottom: safe.bottom + 8,
+			right: safe.right + 8
+		)
+		if keyboardVisible {
+			insets.bottom = max(insets.bottom, keyboardHeight + 8)
+		}
+		return insets
+	}
+
+	private func moveVirtualMouse(by delta: CGPoint) {
+		guard interactionEnabled else { return }
+		stopMomentum()
+		let zoom = max(1, scrollView.zoomScale)
+		let sensitivity = CGFloat(SettingsHandler.mouseSensitivity)
+		let next = CGPoint(
+			x: cursorContentPos.x + delta.x * sensitivity / zoom,
+			y: cursorContentPos.y + delta.y * sensitivity / zoom
+		)
+		cursorContentPos = clampToContent(next)
+		if CParsec.mouseInfo.mousePositionRelative {
+			CParsec.sendMouseDelta(Int32(delta.x * sensitivity),
+								   Int32(delta.y * sensitivity))
+		} else {
+			CParsec.sendMousePosition(viewportPoint: cursorContentPos)
+		}
+		virtualMouseFallbackCursor = true
+		positionCursorOverlay()
+		centerVirtualMouseViewportIfNeeded()
+	}
+
+	private func sendVirtualMouseButton(_ button: VirtualMouseButton, pressed: Bool) {
+		guard interactionEnabled || !pressed else { return }
+		let parsecButton: ParsecMouseButton
+		switch button {
+		case .left: parsecButton = MOUSE_L
+		case .right: parsecButton = MOUSE_R
+		case .middle: parsecButton = MOUSE_MIDDLE
+		}
+		CParsec.sendMouseClickMessage(parsecButton, pressed)
+	}
+
+	private func sendVirtualMouseScroll(_ units: Int32) {
+		guard interactionEnabled else { return }
+		let direction: Int32 = SettingsHandler.reverseScrollDirection ? -1 : 1
+		CParsec.sendWheelMsg(x: 0, y: units * direction)
+	}
+
+	private func centerVirtualMouseViewportIfNeeded() {
+		let zoom = scrollView.zoomScale
+		guard zoom > 1.01 else { return }
+		let visible = CGRect(
+			x: scrollView.contentOffset.x / zoom,
+			y: scrollView.contentOffset.y / zoom,
+			width: scrollView.bounds.width / zoom,
+			height: scrollView.bounds.height / zoom
+		)
+		if visible.contains(cursorContentPos) { return }
+		scrollView.setContentOffset(StreamViewportMath.clampedOffset(
+			CGPoint(x: cursorContentPos.x * zoom - scrollView.bounds.width / 2,
+					y: cursorContentPos.y * zoom - scrollView.bounds.height / 2),
+			contentSize: contentView.bounds.size,
+			viewportSize: scrollView.bounds.size,
+			zoomScale: zoom,
+			minimumY: -scrollView.contentInset.top,
+			additionalBottomInset: scrollView.contentInset.bottom
+		), animated: false)
+		positionCursorOverlay()
 	}
 
 	override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
 		super.viewWillTransition(to: size, with: coordinator)
+		virtualMouseOverlay?.releaseAll()
 
 		let h = size.height
 		let w = size.width
@@ -466,6 +658,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 
 	override func viewDidLayoutSubviews() {
 		super.viewDidLayoutSubviews()
+		updateVirtualMouseVisibility()
 		// glkView/contentView get sized from possibly-stale bounds in viewDidLoad and have no
 		// autoresizing, so the stream renders in a corner until a rotation re-applies the size.
 		// re-apply once layout settles; skip while zoomed so we dont stomp pan/zoom.
@@ -572,6 +765,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	override func viewDidAppear(_ animated: Bool) {
 		super.viewDidAppear(animated)
 		UIApplication.shared.isIdleTimerDisabled = true
+		updateVirtualMouseVisibility()
 		if let parent = parent {
 			parent.setChildForHomeIndicatorAutoHidden(self)
 			parent.setChildViewControllerForPointerLock(self)
@@ -588,6 +782,8 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	override func viewWillDisappear(_ animated: Bool) {
 		super.viewWillDisappear(animated)
 		UIApplication.shared.isIdleTimerDisabled = false
+		virtualMouseOverlay?.releaseAll()
+		virtualMouseOverlay?.setSuspended(true)
 		stopMomentum()
 		textInputView?.resetComposition()
 		CParsec.cancelPendingTextInput()
@@ -608,6 +804,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	private var altKeyHeld = false
 
 	override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+		guard interactionEnabled else { return }
 		for press in presses {
 			guard let key = press.key else { continue }
 			if shouldSuppressHardwareTextKey(key) {
@@ -734,6 +931,8 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	}
 
 	@objc func keyboardWillShow(notification: NSNotification) {
+		defer { updateVirtualMouseVisibility() }
+		virtualMouseOverlay?.releaseAll()
 		if let keyboardFrame = (notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue {
 			let keyboardFrameInView = view.convert(keyboardFrame, from: nil)
 			let scrollFrameInView = scrollView.convert(scrollView.bounds, to: view)
@@ -868,6 +1067,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	}
 
 	@objc func keyboardWillHide(notification: NSNotification) {
+		defer { updateVirtualMouseVisibility() }
 		keyboardHeight = 0.0
         keyboardVisible = false
 		keyboardCoversPicture = false
@@ -939,6 +1139,7 @@ extension ParsecViewController: UIGestureRecognizerDelegate {
 		switch gestureRecognizer.state {
 		case .began:
 			flushAllTouches()
+			virtualMouseOverlay?.releaseAll()
 			onMenuEdgeSwipe?()
 		case .ended, .cancelled, .failed:
 			updateMenuEdgeSwipe(menuHidden: false)
@@ -957,6 +1158,11 @@ extension ParsecViewController: UIGestureRecognizerDelegate {
 	// gestures never fight. No UIScrollView gesture recognizer is in the loop.
 
 	func parsecTouchesUpdated(_ touches: Set<UITouch>, moved: Bool) {
+		guard interactionEnabled else {
+			activeTouches.removeAll()
+			touchOrigins.removeAll()
+			return
+		}
 		let oldCount = activeTouches.count
 		if oldCount == 0 && !touches.isEmpty {
 			resetTouchSequenceState()
@@ -1056,14 +1262,22 @@ extension ParsecViewController: UIGestureRecognizerDelegate {
 		}
 	}
 
+	@objc private func appDidBecomeActive() {
+		updateVirtualMouseVisibility()
+	}
+
 	@objc private func appWillResignActive() {
 		flushAllTouches()
+		resetKeyState()
+		virtualMouseOverlay?.setSuspended(true)
+		virtualMouseOverlay?.releaseAll()
 	}
 
 	// Drop all touch state and release any held button so nothing sticks when backgrounded.
 	private func flushAllTouches() {
 		stopMomentum()
 		releaseClickHoldIfNeeded()
+		virtualMouseOverlay?.releaseAll()
 		textInputView?.resetComposition()
 		CParsec.cancelPendingTextInput()
 		isDragging = false
@@ -1442,6 +1656,13 @@ extension ParsecViewController: UIGestureRecognizerDelegate {
 	func positionCursorOverlay() {
 		guard let u = u else { return }
 		let screenPoint = view.convert(cursorContentPos, from: contentView)
+		let virtualVisible = shouldShowVirtualMouseFallbackCursor
+		virtualMousePointerView?.isHidden = !virtualVisible
+		virtualMousePointerView?.center = screenPoint
+		guard !virtualVisible else {
+			u.isHidden = true
+			return
+		}
 		let cs = CGFloat(SettingsHandler.cursorScale)
 		let hotX = CGFloat(CParsec.mouseInfo.cursorHotX) * cs
 		let hotY = CGFloat(CParsec.mouseInfo.cursorHotY) * cs
@@ -1907,6 +2128,7 @@ extension ParsecViewController: UIKeyInput, UITextInputTraits {
     // 3. call becomeFirstResponder().
     // 4. Do NOT simplify this to a synchronous call, or it will fail in some race conditions.
 	func setKeyboardVisible(_ visible: Bool) {
+		let visible = visible && interactionEnabled
 		keyboardVisible = visible
 		if responderMode != SettingsHandler.textInputMode {
 			textInputView?.resetComposition()
@@ -1915,6 +2137,7 @@ extension ParsecViewController: UIKeyInput, UITextInputTraits {
 		}
 		if visible {
 			DispatchQueue.main.async {
+				guard self.interactionEnabled, self.keyboardVisible else { return }
 				if let input = self.textInputView {
 					input.inputAccessoryView = self.inputAccessoryView
 					input.reloadInputViews()
