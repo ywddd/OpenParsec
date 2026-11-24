@@ -17,8 +17,8 @@ struct AdaptiveHostResolution: Equatable {
 		let screenHeight = Int((viewportSize.height * scale).rounded())
 		guard screenWidth > screenHeight else { return nil }
 
-		let maxWidth = even(min(1920, screenWidth))
-		let maxHeight = even(min(1080, screenHeight))
+		let maxWidth = even(Double(min(1920, screenWidth)))
+		let maxHeight = even(Double(min(1080, screenHeight)))
 		guard maxWidth >= 640, maxHeight >= 360 else { return nil }
 
 		let widthAtHeightLimit = even(Double(maxHeight) * Double(screenWidth) / Double(screenHeight))
