@@ -225,15 +225,20 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	}
 
 	func applyDisplayMode() {
+		guard scrollView != nil else { return }
 		syncDisplayModeToRenderers()
+		stopMomentum()
+		scrollView.zoomScale = 1.0
+		applyDisplayGeometry()
+	}
+
+	private func applyDisplayGeometry() {
 		guard scrollView != nil else { return }
 		let hostSize = CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight))
 		let viewport = view.bounds.size
 		guard hostSize.width > 0, hostSize.height > 0, viewport.width > 0, viewport.height > 0 else { return }
 		lastAppliedHostSize = hostSize
 		lastAppliedViewportSize = viewport
-		stopMomentum()
-		scrollView.zoomScale = 1.0
 		let geometry = StreamGeometry(viewportSize: viewport, hostSize: hostSize, mode: displayMode)
 		glkView.updateSize(width: geometry.contentSize.width, height: geometry.contentSize.height)
 		contentView.frame = CGRect(origin: .zero, size: geometry.contentSize)
@@ -244,7 +249,11 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		}
 		scrollView.contentOffset = geometry.scrollOffset
 		visibleContentRect = CGRect(origin: geometry.scrollOffset, size: viewport)
-		CParsec.setFrame(geometry.contentSize.width, geometry.contentSize.height, UIScreen.main.scale)
+		let newSdkScale = StreamGeometry.sdkScale(for: geometry)
+		// The SDK needs one scale for its input coordinate translation. For non-uniform fill,
+		// advertise the average axis scale; renderers use the exact x/y geometry independently.
+		CParsec.setFrame(geometry.contentSize.width, geometry.contentSize.height, newSdkScale)
+		CParsec.sendMousePosition(Int32(cursorContentPos.x), Int32(cursorContentPos.y))
 		positionCursorOverlay()
 	}
 
@@ -440,7 +449,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		}
 		scrollView.contentOffset = geometry.scrollOffset
 		visibleContentRect = CGRect(origin: geometry.scrollOffset, size: CGSize(width: width, height: height))
-		CParsec.setFrame(geometry.contentSize.width, geometry.contentSize.height, UIScreen.main.scale)
+		CParsec.setFrame(geometry.contentSize.width, geometry.contentSize.height, geometry.sdkScale)
 	}
 
 	func syncHostSizeIfNeeded() {
@@ -659,6 +668,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	}
 
 	func pictureShiftAboveKeyboard(_ keyboard: CGFloat) -> CGFloat? {
+		guard displayMode == .fit else { return nil }
 		let w = view.bounds.width, h = view.bounds.height
 		guard keyboard > 0, CParsec.hostWidth > 0, CParsec.hostHeight > 0 else { return nil }
 		let picture = min(h, w * CGFloat(CParsec.hostHeight / CParsec.hostWidth))

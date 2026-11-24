@@ -22,23 +22,21 @@ extension String {
 }
 
 class CursorPositionHelper {
-	static func toHost(_ xp: Int, _ yp: Int) -> (Int, Int) {
-		let geometry = StreamGeometry(
+	private static var geometry: StreamGeometry {
+		StreamGeometry(
 			viewportSize: CGSize(width: CGFloat(CParsec.clientWidth), height: CGFloat(CParsec.clientHeight)),
 			hostSize: CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight)),
 			mode: SettingsHandler.streamDisplayMode
 		)
+	}
+
+	static func toHost(_ xp: Int, _ yp: Int) -> (Int, Int) {
 		let hostPoint = geometry.hostPoint(forScreenPoint: CGPoint(x: CGFloat(xp), y: CGFloat(yp)))
 		return (Int(ParsecSDKBridge.clamp(Float(hostPoint.x), minValue: 0, maxValue: CParsec.hostWidth)),
 				Int(ParsecSDKBridge.clamp(Float(hostPoint.y), minValue: 0, maxValue: CParsec.hostHeight)))
 	}
 
 	static func toClient(_ xa: Int, _ ya: Int) -> (Int, Int) {
-		let geometry = StreamGeometry(
-			viewportSize: CGSize(width: CGFloat(CParsec.clientWidth), height: CGFloat(CParsec.clientHeight)),
-			hostSize: CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight)),
-			mode: SettingsHandler.streamDisplayMode
-		)
 		let screenPoint = geometry.screenPoint(forHostPoint: CGPoint(x: CGFloat(xa), y: CGFloat(ya)))
 		return (Int(ParsecSDKBridge.clamp(Float(screenPoint.x), minValue: 0, maxValue: CParsec.clientWidth)),
 				Int(ParsecSDKBridge.clamp(Float(screenPoint.y), minValue: 0, maxValue: CParsec.clientHeight)))

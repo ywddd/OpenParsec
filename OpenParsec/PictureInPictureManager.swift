@@ -235,10 +235,14 @@ class PictureInPictureManager: NSObject {
 			mode: SettingsHandler.streamDisplayMode
 		)
 		let visible = geometry.visibleHostRect.intersection(CGRect(x: 0, y: 0, width: geometry.hostSize.width, height: geometry.hostSize.height))
-		let srcX = GLint((visible.minX * geometry.scale).rounded())
-		let srcY = GLint((visible.minY * geometry.scale).rounded())
-		let srcW = GLint(max(1, (visible.width * geometry.scale).rounded()))
-		let srcH = GLint(max(1, (visible.height * geometry.scale).rounded()))
+		let minX = visible.minX * geometry.horizontalScale
+		let minY = visible.minY * geometry.verticalScale
+		let maxX = visible.maxX * geometry.horizontalScale
+		let maxY = visible.maxY * geometry.verticalScale
+		let srcX = GLint(minX.rounded())
+		let srcY = GLint(minY.rounded())
+		let srcW = GLint(max(1, (maxX - minX).rounded()))
+		let srcH = GLint(max(1, (maxY - minY).rounded()))
 
 		// Blit view FBO → capture FBO with Y-flip
 		glBindFramebuffer(GLenum(GL_READ_FRAMEBUFFER), GLenum(currentFBO))

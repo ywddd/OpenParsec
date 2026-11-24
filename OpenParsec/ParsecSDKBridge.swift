@@ -112,6 +112,7 @@ class ParsecSDKBridge: ParsecService {
 	public var clientWidth: Float = 1920
 	public var clientHeight: Float = 1080
 	var displayMode: StreamDisplayMode = .fill
+	private var clientScale: Float = UIScreen.main.scale
 	private var hasFrame = false
 	private var didSetDimensions = false
 
@@ -292,6 +293,7 @@ class ParsecSDKBridge: ParsecService {
 	func setFrame(_ width: CGFloat, _ height: CGFloat, _ scale: CGFloat) {
 
 		ParsecClientSetDimensions(_parsec, UInt8(DEFAULT_STREAM), UInt32(width), UInt32(height), Float(scale))
+		clientScale = Float(scale)
 		if !didSetDimensions { dimsSetAt = CACurrentMediaTime() }
 		didSetDimensions = true
 
@@ -305,11 +307,14 @@ class ParsecSDKBridge: ParsecService {
 			return
 		}
 		let geometry = StreamGeometry(viewportSize: oldSize, hostSize: CGSize(width: CGFloat(hostWidth), height: CGFloat(hostHeight)), mode: displayMode)
-		let hostPoint = geometry.hostPoint(forScreenPoint: CGPoint(x: CGFloat(mouseInfo.mouseX), y: CGFloat(mouseInfo.mouseY)))
+		// SDK cursor events are in physical pixels; client dimensions are in screen points.
+		let clientPoint = CGPoint(x: CGFloat(mouseInfo.mouseX) / CGFloat(clientScale),
+								  y: CGFloat(mouseInfo.mouseY) / CGFloat(clientScale))
+		let hostPoint = geometry.hostPoint(forScreenPoint: clientPoint)
 		let newGeometry = StreamGeometry(viewportSize: CGSize(width: width, height: height), hostSize: CGSize(width: CGFloat(hostWidth), height: CGFloat(hostHeight)), mode: displayMode)
 		let moved = newGeometry.screenPoint(forHostPoint: hostPoint)
-		mouseInfo.mouseX = ParsecSDKBridge.clamp(Int32(moved.x.rounded()), minValue: 0, maxValue: Int32(width))
-		mouseInfo.mouseY = ParsecSDKBridge.clamp(Int32(moved.y.rounded()), minValue: 0, maxValue: Int32(height))
+		mouseInfo.mouseX = ParsecSDKBridge.clamp(Int32((moved.x * CGFloat(clientScale)).rounded()), minValue: 0, maxValue: Int32(width * CGFloat(clientScale)))
+		mouseInfo.mouseY = ParsecSDKBridge.clamp(Int32((moved.y * CGFloat(clientScale)).rounded()), minValue: 0, maxValue: Int32(height * CGFloat(clientScale)))
 	}
 
 	// timeout in ms, 16 == 60 FPS, 8 == 120 FPS, etc.
@@ -427,9 +432,11 @@ class ParsecSDKBridge: ParsecService {
 		let isEcho = CACurrentMediaTime() - lastMoveSent < 0.3
 		let settling = CACurrentMediaTime() - dimsSetAt < 1
 		// a report at the picture's top left corner carries no position
-		let geometry = StreamGeometry(viewportSize: CGSize(width: CGFloat(clientWidth), height: CGFloat(clientHeight)), hostSize: CGSize(width: CGFloat(hostWidth), height: CGFloat(hostHeight)), mode: displayMode)
+		let geometry = StreamGeometry(viewportSize: CGSize(width: CGFloat(clientWidth) / CGFloat(clientScale), height: CGFloat(clientHeight) / CGFloat(clientScale)), hostSize: CGSize(width: CGFloat(hostWidth), height: CGFloat(hostHeight)), mode: displayMode)
 		let origin = geometry.screenPoint(forHostPoint: .zero)
-		let atOrigin = abs(Float(event.cursor.positionX) - Float(origin.x)) < 1 && abs(Float(event.cursor.positionY) - Float(origin.y)) < 1
+		let originX = origin.x * CGFloat(clientScale)
+		let originY = origin.y * CGFloat(clientScale)
+		let atOrigin = abs(Float(event.cursor.positionX) - Float(originX)) < 1 && abs(Float(event.cursor.positionY) - Float(originY)) < 1
 		if didSetDimensions && !settling && !atOrigin && (prevHidden || prevRelative || !isEcho) && !event.cursor.relative && !event.cursor.hidden {
 			mouseInfo.mouseX = ParsecSDKBridge.clamp(Int32(clamping: event.cursor.positionX), minValue: 0, maxValue: Int32(clientWidth))
 			mouseInfo.mouseY = ParsecSDKBridge.clamp(Int32(clamping: event.cursor.positionY), minValue: 0, maxValue: Int32(clientHeight))
