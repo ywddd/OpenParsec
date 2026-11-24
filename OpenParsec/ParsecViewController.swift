@@ -464,6 +464,12 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 			name: UIApplication.willResignActiveNotification,
 			object: nil
 		)
+		NotificationCenter.default.addObserver(
+			self,
+			selector: #selector(appDidBecomeActive),
+			name: UIApplication.didBecomeActiveNotification,
+			object: nil
+		)
 		NotificationCenter.default.addObserver(self, selector: #selector(appDidBecomeActive),
 			name: UIApplication.didBecomeActiveNotification, object: nil)
 
@@ -795,6 +801,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillShowNotification, object: nil)
 		NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillHideNotification, object: nil)
 		NotificationCenter.default.removeObserver(self, name: UIApplication.willResignActiveNotification, object: nil)
+		NotificationCenter.default.removeObserver(self, name: UIApplication.didBecomeActiveNotification, object: nil)
 	}
 	
 	
