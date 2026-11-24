@@ -130,9 +130,9 @@ final class VirtualMouseOverlay: UIView {
 		if presentation.isCollapsed {
 			guard activeTouches.isEmpty,
 				  let touch = touches.first(where: { point(inside: $0.location(in: self), with: event) }) else { return }
-			let point = touch.location(in: self)
-			activeTouches[touch] = TouchState(interaction: .reposition, lastPoint: point,
-											 drag: VirtualMouseLauncherDrag(startPoint: point))
+			let location = touch.location(in: self)
+			activeTouches[touch] = TouchState(interaction: .reposition, lastPoint: location,
+											 drag: VirtualMouseLauncherDrag(startPoint: location))
 			return
 		}
 		guard let layout = localPresentation.layout else { return }

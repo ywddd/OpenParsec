@@ -2215,8 +2215,8 @@ extension ParsecViewController: UIKeyInput, UITextInputTraits {
 		} else {
 			textInputView?.resetComposition()
 			CParsec.cancelPendingTextInput()
-			textInputView?.resignFirstResponder()
-			resignFirstResponder()
+			_ = textInputView?.resignFirstResponder()
+			_ = resignFirstResponder()
 		}
 	}
 
