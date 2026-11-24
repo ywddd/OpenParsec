@@ -28,24 +28,24 @@ struct StreamGeometry {
 	}
 
 	var contentRect: CGRect {
-		CGRect(origin: contentOffset, size: contentSize)
+		CGRect(x: -contentOffset.x, y: -contentOffset.y, width: contentSize.width, height: contentSize.height)
 	}
 
 	var visibleHostRect: CGRect {
 		guard scale > 0 else { return CGRect(origin: .zero, size: hostSize) }
-		return CGRect(x: contentOffset.x / scale,
-					  y: contentOffset.y / scale,
+		return CGRect(x: -contentOffset.x / scale,
+					  y: -contentOffset.y / scale,
 					  width: viewportSize.width / scale,
 					  height: viewportSize.height / scale)
 	}
 
 	func screenPoint(forHostPoint point: CGPoint) -> CGPoint {
-		CGPoint(x: point.x * scale - contentOffset.x,
-				y: point.y * scale - contentOffset.y)
+		CGPoint(x: point.x * scale + contentOffset.x,
+				y: point.y * scale + contentOffset.y)
 	}
 
 	func hostPoint(forScreenPoint point: CGPoint) -> CGPoint {
-		CGPoint(x: (point.x + contentOffset.x) / scale,
-				y: (point.y + contentOffset.y) / scale)
+		CGPoint(x: (point.x - contentOffset.x) / scale,
+				y: (point.y - contentOffset.y) / scale)
 	}
 }

@@ -116,7 +116,7 @@ class ParsecMetalRenderer: NSObject, MTKViewDelegate {
 
 	private func syncClientFrame(_ view: MTKView) {
 		guard abs(view.frame.size.width - lastWidth) > 0.1 || abs(view.contentScaleFactor - lastScale) > 0.01 else { return }
-		CParsec.setFrame(view.frame.size.width, view.frame.size.height, view.contentScaleFactor)
+		CParsec.setFrame(view.frame.size.width, view.frame.size.height, view.contentScaleFactor / UIScreen.main.scale)
 		lastWidth = view.frame.size.width
 		lastScale = view.contentScaleFactor
 	}

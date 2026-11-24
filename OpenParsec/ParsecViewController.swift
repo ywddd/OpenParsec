@@ -90,10 +90,9 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	var menuEdgeSwipeRight: UIScreenEdgePanGestureRecognizer?
 	var scrollView: UIScrollView!
 	var contentView: UIView!
-	var displayMode: StreamDisplayMode {
+	var displayMode: StreamDisplayMode = SettingsHandler.streamDisplayMode {
 		didSet { applyDisplayMode() }
 	}
-	var initialDisplayMode: StreamDisplayMode?
 	var lastLaidOutWidth: CGFloat = 0
 	var lastLaidOutHeight: CGFloat = 0
 
@@ -106,7 +105,6 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	}
 
 	init() {
-		initialDisplayMode = SettingsHandler.streamDisplayMode
 		super.init(nibName: nil, bundle: nil)
 
 		let update: () -> Void = { [weak self] in self?.updateImage() }
@@ -130,9 +128,6 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 
 		self.gamePadController = GamepadController()
 		self.touchController = TouchController()
-		if let initialDisplayMode {
-			displayMode = initialDisplayMode
-		}
 	}
 
 	required init?(coder: NSCoder) {
@@ -238,7 +233,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		glkView.updateSize(width: geometry.contentSize.width, height: geometry.contentSize.height)
 		contentView.frame = geometry.contentRect
 		scrollView.contentSize = geometry.contentSize
-		scrollView.contentOffset = CGPoint(x: max(0, -geometry.contentOffset.x), y: max(0, -geometry.contentOffset.y))
+		scrollView.contentOffset = .zero
 		let hostPoint = StreamGeometry(viewportSize: viewport, hostSize: hostSize, mode: displayMode)
 			.hostPoint(forScreenPoint: CGPoint(x: CGFloat(CParsec.mouseInfo.mouseX), y: CGFloat(CParsec.mouseInfo.mouseY)))
 		let screenPoint = geometry.screenPoint(forHostPoint: hostPoint)
@@ -432,7 +427,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		glkView.updateSize(width: geometry.contentSize.width, height: geometry.contentSize.height)
 		contentView.frame = geometry.contentRect
 		scrollView.contentSize = geometry.contentSize
-		scrollView.contentOffset = CGPoint(x: max(0, -geometry.contentOffset.x), y: max(0, -geometry.contentOffset.y))
+		scrollView.contentOffset = .zero
 	}
 
 	override func viewDidAppear(_ animated: Bool) {
