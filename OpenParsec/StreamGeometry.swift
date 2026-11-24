@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 enum StreamDisplayMode: Int {
 	case adaptive = 0

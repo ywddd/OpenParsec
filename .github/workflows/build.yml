@@ -67,6 +67,7 @@ jobs:
 
           source = r'''
           import Foundation
+          import CoreGraphics
 
           func near(_ actual: CGFloat, _ expected: CGFloat, _ label: String, tolerance: CGFloat = 0.01) {
               precondition(actual.isFinite && abs(actual - expected) <= tolerance, "\(label): \(actual) != \(expected)")
