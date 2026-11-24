@@ -4,19 +4,15 @@ import UIKit
 class TouchController {
 
 	func onTouch(typeOfTap: Int, location: CGPoint, state: UIGestureRecognizer.State) {
-
-		let x = Int32(location.x)
-		let y = Int32(location.y)
-
 		// Send the mouse input to the host
 		let parsecTap = ParsecMouseButton(rawValue: UInt32(typeOfTap))
 		switch state {
 			case .began:
-				CParsec.sendMouseMessage(parsecTap, x, y, true)
+				CParsec.sendMouseMessage(parsecTap, viewportPoint: location, true)
 			case .changed:
-				CParsec.sendMousePosition(x, y)
+				CParsec.sendMousePosition(viewportPoint: location)
 			case .ended, .cancelled:
-				CParsec.sendMouseMessage(parsecTap, x, y, false)
+				CParsec.sendMouseMessage(parsecTap, viewportPoint: location, false)
 			default:
 				break
 		}
@@ -30,11 +26,8 @@ class TouchController {
 		// reconnect/disconnect landing in that window, leaving the button (esp. right) stuck on the
 		// host — which pops a context menu that survives the transition.
 		if SettingsHandler.cursorMode == .direct {
-			let x = Int32(location.x)
-			let y = Int32(location.y)
-
-			CParsec.sendMouseMessage(parsecTap, x, y, true)
-			CParsec.sendMouseMessage(parsecTap, x, y, false)
+			CParsec.sendMouseMessage(parsecTap, viewportPoint: location, true)
+			CParsec.sendMouseMessage(parsecTap, viewportPoint: location, false)
 
 		} else {
 			CParsec.sendMouseClickMessage(parsecTap, true)

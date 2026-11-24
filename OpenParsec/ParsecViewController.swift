@@ -135,11 +135,11 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 
 	func computeRenderScale() -> CGFloat {
 		let nativeScale = UIScreen.main.nativeScale
-		guard scrollView.zoomScale > 1.01 else { return nativeScale }
+		guard scrollView != nil, scrollView.zoomScale > 1.01, zoomEnabled else { return nativeScale }
 		let vw = glkView.renderView.frame.size.width
 		let vh = glkView.renderView.frame.size.height
-		let sw = CGFloat(CParsec.hostWidth)
-		let sh = CGFloat(CParsec.hostHeight)
+		let sw = CGFloat(CParsec.actualFrameWidth)
+		let sh = CGFloat(CParsec.actualFrameHeight)
 		guard vw > 0, vh > 0, sw > 0, sh > 0 else { return nativeScale }
 		// Match the drawable to the source so zoom stays crisp without rendering wasted pixels.
 		let needed = max(sw / vw, sh / vh)
@@ -157,6 +157,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	}
 
 	func updateImage() {
+		syncHostSizeIfNeeded()
 		updateRenderScale()
         // Optimization: Snap current valus
         let currentMouseX = CParsec.mouseInfo.mouseX
@@ -187,10 +188,15 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 			// input-driven). When idle, follow the host's reported cursor so host- or keyboard-
 			// driven moves are reflected and any prediction drift is corrected.
 			if !isDragging && !clickHoldActive && !cursorMomentumActive {
+				if CParsec.mouseInfo.mousePositionRelative {
+					u?.isHidden = currentHidden
+					return
+				}
+				let viewportPoint = cursorViewportPoint()
 				let fingerSet = SettingsHandler.cursorMode == .direct
-					&& abs(cursorContentPos.x - CGFloat(currentMouseX)) < 1
-					&& abs(cursorContentPos.y - CGFloat(currentMouseY)) < 1
-				cursorContentPos = CGPoint(x: CGFloat(currentMouseX), y: CGFloat(currentMouseY))
+					&& abs(cursorContentPos.x - viewportPoint.x) < 1
+					&& abs(cursorContentPos.y - viewportPoint.y) < 1
+				cursorContentPos = viewportPoint
 				positionCursorOverlay()
 				if scrollView.zoomScale > 1.0 {
 					if !fingerSet {
@@ -223,28 +229,37 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		guard scrollView != nil else { return }
 		syncDisplayModeToRenderers()
 		stopMomentum()
-		scrollView.zoomScale = 1.0
+		UIView.performWithoutAnimation {
+			scrollView.zoomScale = 1.0
+			scrollView.contentOffset = .zero
+		}
+		lastAppliedHostSize = .zero
+		lastAppliedViewportSize = .zero
 		applyDisplayGeometry()
 	}
 
 	private func applyDisplayGeometry() {
 		guard scrollView != nil else { return }
-		let hostSize = CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight))
+		let hostSize = CGSize(width: CGFloat(CParsec.actualFrameWidth), height: CGFloat(CParsec.actualFrameHeight))
 		let viewport = view.bounds.size
 		guard hostSize.width > 0, hostSize.height > 0, viewport.width > 0, viewport.height > 0 else { return }
 		lastAppliedHostSize = hostSize
 		lastAppliedViewportSize = viewport
 		let geometry = StreamGeometry(viewportSize: viewport, hostSize: hostSize)
-		glkView.updateSize(width: geometry.contentSize.width, height: geometry.contentSize.height)
-		contentView.frame = CGRect(origin: .zero, size: geometry.contentSize)
-		scrollView.contentSize = geometry.contentSize
-		contentView.frame.origin = CGPoint(x: max(0, -geometry.contentOffset.x),
-										   y: max(0, -geometry.contentOffset.y))
-		scrollView.contentOffset = geometry.scrollOffset
-		visibleContentRect = CGRect(origin: geometry.scrollOffset, size: viewport)
-		CParsec.setFrame(geometry.contentSize.width, geometry.contentSize.height, UIScreen.main.scale)
-		cursorContentPos = CGPoint(x: CGFloat(CParsec.mouseInfo.mouseX), y: CGFloat(CParsec.mouseInfo.mouseY))
+		layoutViewport(geometry: geometry, viewport: viewport)
+		cursorContentPos = cursorViewportPoint()
 		positionCursorOverlay()
+	}
+
+	private func cursorViewportPoint() -> CGPoint {
+		let viewport = view.bounds.size
+		let actual = StreamGeometry(
+			viewportSize: viewport,
+			hostSize: CGSize(width: CGFloat(CParsec.actualFrameWidth), height: CGFloat(CParsec.actualFrameHeight))
+		)
+		let sdkPoint = CGPoint(x: CGFloat(CParsec.mouseInfo.mouseX), y: CGFloat(CParsec.mouseInfo.mouseY))
+		return actual.viewportPoint(forSDKPoint: sdkPoint,
+			sdkHostSize: CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight)))
 	}
 
 	override func viewDidLoad() {
@@ -392,8 +407,10 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 
 		// Reset zoom on rotation
 		scrollView.zoomScale = 1.0
+		scrollView.contentOffset = .zero
+		lastAppliedHostSize = .zero
+		lastAppliedViewportSize = .zero
 
-		self.glkView.updateSize(width: w, height: h)
 		applyStreamLayout(width: w, height: h)
 
         // Reset accessory view to ensure correct width in new orientation
@@ -416,53 +433,97 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		lastLaidOutWidth = w
 		lastLaidOutHeight = h
 		requestAdaptiveResolutionIfNeeded()
-		glkView.updateSize(width: w, height: h)
 		applyStreamLayout(width: w, height: h)
 	}
 
 	private func applyStreamLayout(width: CGFloat, height: CGFloat) {
-		let hostSize = CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight))
+		let hostSize = CGSize(width: CGFloat(CParsec.actualFrameWidth), height: CGFloat(CParsec.actualFrameHeight))
 		let viewport = CGSize(width: width, height: height)
 		guard hostSize.width > 0, hostSize.height > 0 else {
-			contentView.frame.size = CGSize(width: width, height: height)
-			scrollView.contentSize = CGSize(width: width, height: height)
+			layoutViewportOnly(viewport: viewport)
 			return
 		}
 		lastAppliedHostSize = hostSize
 		lastAppliedViewportSize = viewport
 		let geometry = StreamGeometry(viewportSize: viewport, hostSize: hostSize)
-		glkView.updateSize(width: geometry.contentSize.width, height: geometry.contentSize.height)
-		contentView.frame = CGRect(origin: .zero, size: geometry.contentSize)
-		scrollView.contentSize = geometry.contentSize
-		contentView.frame.origin = CGPoint(x: max(0, -geometry.contentOffset.x),
-										   y: max(0, -geometry.contentOffset.y))
-		scrollView.contentOffset = geometry.scrollOffset
-		visibleContentRect = CGRect(origin: geometry.scrollOffset, size: CGSize(width: width, height: height))
-		CParsec.setFrame(geometry.contentSize.width, geometry.contentSize.height, UIScreen.main.scale)
+		layoutViewport(geometry: geometry, viewport: viewport)
+		cursorContentPos = cursorViewportPoint()
+		positionCursorOverlay()
+	}
+
+	private func layoutViewport(geometry: StreamGeometry, viewport: CGSize) {
+		contentView.frame = CGRect(origin: .zero, size: viewport)
+		glkView.updateSize(width: viewport.width, height: viewport.height)
+		scrollView.contentSize = viewport
+		if scrollView.zoomScale <= 1.01 {
+			scrollView.contentOffset = .zero
+		} else {
+			let zoom = scrollView.zoomScale
+			let maxX = max(0, viewport.width * zoom - viewport.width)
+			let maxY = max(0, viewport.height * zoom - viewport.height)
+			scrollView.contentOffset = CGPoint(
+				x: min(max(0, scrollView.contentOffset.x), maxX),
+				y: min(max(0, scrollView.contentOffset.y), maxY)
+			)
+		}
+		visibleContentRect = geometry.pictureRect
+		CParsec.setFrame(viewport.width, viewport.height, UIScreen.main.nativeScale)
 	}
 
 	func syncHostSizeIfNeeded() {
 		guard scrollView != nil else { return }
-		let hostSize = CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight))
+		let hostSize = CGSize(width: CGFloat(CParsec.actualFrameWidth), height: CGFloat(CParsec.actualFrameHeight))
 		let viewport = view.bounds.size
-		guard hostSize.width > 0, hostSize.height > 0, viewport.width > 0, viewport.height > 0 else { return }
-		guard hostSize != lastAppliedHostSize || viewport != lastAppliedViewportSize else { return }
-		applyDisplayMode()
+		guard viewport.width > 0, viewport.height > 0 else { return }
+		guard hostSize.width > 0, hostSize.height > 0 else {
+			layoutViewportOnly(viewport: viewport)
+			return
+		}
+		guard hostSize != lastAppliedHostSize || viewport != lastAppliedViewportSize else {
+			positionCursorOverlay()
+			return
+		}
+		lastAppliedHostSize = hostSize
+		lastAppliedViewportSize = viewport
+		let geometry = StreamGeometry(viewportSize: viewport, hostSize: hostSize)
+		if scrollView.zoomScale <= 1.01 {
+			layoutViewport(geometry: geometry, viewport: viewport)
+		} else {
+			visibleContentRect = geometry.pictureRect
+			CParsec.setFrame(viewport.width, viewport.height, UIScreen.main.nativeScale)
+		}
+		cursorContentPos = cursorViewportPoint()
+		positionCursorOverlay()
+	}
+
+	private func layoutViewportOnly(viewport: CGSize) {
+		contentView.frame = CGRect(origin: .zero, size: viewport)
+		glkView.updateSize(width: viewport.width, height: viewport.height)
+		scrollView.contentSize = viewport
+		scrollView.contentOffset = .zero
+		CParsec.setFrame(viewport.width, viewport.height, UIScreen.main.nativeScale)
 	}
 
 	func requestAdaptiveResolutionIfNeeded() {
 		guard displayMode == .adaptive, !DataManager.model.adaptiveResolutionPaused,
 			  SettingsHandler.resolution == .client, CParsec.parsecImpl != nil else { return }
-		let screen = AdaptiveHostResolution.currentViewportSize(preferring: .zero)
-		guard screen.width > screen.height else { return }
-		let viewport = view.bounds.size
+		let screen = ParsecSDKBridge.currentViewportSize(preferring: .zero)
+		guard screen.width > screen.height else {
+			resetAdaptiveResolutionRequest()
+			return
+		}
+		let viewport = ParsecSDKBridge.currentViewportSize(preferring: view.bounds.size)
 		guard viewport.width > viewport.height else { return }
-		guard let target = AdaptiveHostResolution.target(for: viewport) else { return }
-		guard DataManager.model.adaptiveResolution != target else { return }
-		DataManager.model.adaptiveResolution = target
-		DataManager.model.resolutionX = target.width
-		DataManager.model.resolutionY = target.height
-		CParsec.updateHostVideoConfig()
+		guard let target = AdaptiveHostResolution.target(for: viewport, nativeScale: UIScreen.main.nativeScale) else { return }
+		if let bridge = CParsec.parsecImpl as? ParsecSDKBridge {
+			bridge.requestAdaptiveResolution(target)
+		}
+	}
+
+	func resetAdaptiveResolutionRequest() {
+		if let bridge = CParsec.parsecImpl as? ParsecSDKBridge {
+			bridge.resetAdaptiveResolutionRequest()
+		}
 	}
 
 	override func viewDidAppear(_ animated: Bool) {
@@ -651,7 +712,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 			}
 
             // Automatic scroll up only if mouse is in the bottom half of the screen
-            let mouseY = CGFloat(CParsec.mouseInfo.mouseY)
+            let mouseY = cursorViewportPoint().y
             let screenMidY = view.bounds.height / 2.1
 
             if mouseY > screenMidY {
@@ -675,7 +736,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		guard displayMode == .original else { return nil }
 		let w = view.bounds.width, h = view.bounds.height
 		guard keyboard > 0, CParsec.hostWidth > 0, CParsec.hostHeight > 0 else { return nil }
-		let picture = min(h, w * CGFloat(CParsec.hostHeight / CParsec.hostWidth))
+		let picture = min(h, w * CGFloat(CParsec.actualFrameHeight / CParsec.actualFrameWidth))
 		guard picture <= h - keyboard else { return nil }
 		return keyboard - (h - picture) / 2
 	}
@@ -898,7 +959,7 @@ extension ParsecViewController: UIGestureRecognizerDelegate {
 		if SettingsHandler.cursorMode == .direct {
 			if let t = activeTouches.first {
 				cursorContentPos = clampToContent(contentView.convert(t.location(in: view), from: view))
-				CParsec.sendMousePosition(Int32(cursorContentPos.x), Int32(cursorContentPos.y))
+				CParsec.sendMousePosition(viewportPoint: cursorContentPos)
 				positionCursorOverlay()
 			}
 			CParsec.sendMouseClickMessage(ParsecMouseButton.init(rawValue: 1), true)
@@ -974,7 +1035,7 @@ extension ParsecViewController: UIGestureRecognizerDelegate {
 		}
 		// Command the host to the ABSOLUTE predicted position (not a delta) so the host cursor can't
 		// crawl behind network round-trips - clicks always land where the cursor is drawn.
-		CParsec.sendMousePosition(Int32(cursorContentPos.x), Int32(cursorContentPos.y))
+		CParsec.sendMousePosition(viewportPoint: cursorContentPos)
 		if SettingsHandler.cursorMode == .direct {
 			edgeScrollPoint = loc
 			if cursorDidMoveThisTouch && edgeScrollVelocity(at: loc) != .zero {
@@ -1080,7 +1141,7 @@ extension ParsecViewController: UIGestureRecognizerDelegate {
 			cursorContentPos = clampToContent(CGPoint(x: cursorContentPos.x + cursorVelocity.x * dt,
 													  y: cursorContentPos.y + cursorVelocity.y * dt))
 			if !CParsec.mouseInfo.mousePositionRelative {
-				CParsec.sendMousePosition(Int32(cursorContentPos.x), Int32(cursorContentPos.y))
+				CParsec.sendMousePosition(viewportPoint: cursorContentPos)
 			}
 			centerViewportOnCursorPos()
 			positionCursorOverlay()
@@ -1149,32 +1210,29 @@ extension ParsecViewController: UIGestureRecognizerDelegate {
 		let centerY = ((scrollView.bounds.height - bottomInset) / 2 + scrollView.contentOffset.y) / newZoom
 		cursorContentPos = clampToContent(CGPoint(x: centerX, y: centerY))
 		if !CParsec.mouseInfo.mousePositionRelative {
-			CParsec.sendMousePosition(Int32(cursorContentPos.x), Int32(cursorContentPos.y))
+			CParsec.sendMousePosition(viewportPoint: cursorContentPos)
 		}
 		positionCursorOverlay()
 	}
 
 	private func clampToContent(_ p: CGPoint) -> CGPoint {
-		let w = scrollView.contentSize.width
-		let h = scrollView.contentSize.height
-		return CGPoint(x: min(max(0, p.x), w), y: min(max(0, p.y), h))
+		let geometry = StreamGeometry(viewportSize: contentView.bounds.size,
+			hostSize: CGSize(width: CGFloat(CParsec.actualFrameWidth), height: CGFloat(CParsec.actualFrameHeight)))
+		let rect = geometry.pictureRect
+		return CGPoint(x: min(max(rect.minX, p.x), rect.maxX), y: min(max(rect.minY, p.y), rect.maxY))
 	}
 
 	// Places the cursor overlay at the cursor's content position projected into screen space,
 	// drawn at full Cursor Scale (no zoom division) so it stays crisp and constant-sized.
 	func positionCursorOverlay() {
 		guard let u = u else { return }
-		let zoom = scrollView.zoomScale
-		let off = scrollView.contentOffset
-		let contentOrigin = contentView.frame.origin
-		let screenX = contentOrigin.x + cursorContentPos.x * zoom - off.x
-		let screenY = contentOrigin.y + cursorContentPos.y * zoom - off.y
+		let screenPoint = view.convert(cursorContentPos, from: contentView)
 		let cs = CGFloat(SettingsHandler.cursorScale)
 		let hotX = CGFloat(CParsec.mouseInfo.cursorHotX) * cs
 		let hotY = CGFloat(CParsec.mouseInfo.cursorHotY) * cs
 		let w = CGFloat(CParsec.mouseInfo.cursorWidth) * cs
 		let h = CGFloat(CParsec.mouseInfo.cursorHeight) * cs
-		u.frame = CGRect(x: screenX - hotX, y: screenY - hotY, width: w, height: h)
+		u.frame = CGRect(x: screenPoint.x - hotX, y: screenPoint.y - hotY, width: w, height: h)
 	}
 
 	@objc func handleSingleFingerTap(_ gestureRecognizer: UITapGestureRecognizer) {
@@ -1182,8 +1240,7 @@ extension ParsecViewController: UIGestureRecognizerDelegate {
 		if cursorDidMoveThisTouch { return }
 		if SettingsHandler.cursorMode == .direct { return }
 		let location = gestureRecognizer.location(in: gestureRecognizer.view)
-		let adjustedLocation = contentView.convert(location, from: view)
-		touchController.onTap(typeOfTap: 1, location: adjustedLocation)
+		touchController.onTap(typeOfTap: 1, location: clampToContent(contentView.convert(location, from: view)))
 	}
 
 	@objc func handleTwoFingerTap(_ gestureRecognizer: UITapGestureRecognizer) {
@@ -1203,8 +1260,7 @@ extension ParsecViewController: UIGestureRecognizerDelegate {
 			location = gestureRecognizer.location(in: gestureRecognizer.view)
 		}
 
-		let adjustedLocation = contentView.convert(location, from: view)
-		touchController.onTap(typeOfTap: 3, location: adjustedLocation)
+		touchController.onTap(typeOfTap: 3, location: clampToContent(contentView.convert(location, from: view)))
 	}
 
 	@objc func handleThreeFinderTap(_ gestureRecognizer: UITapGestureRecognizer) {
@@ -1307,7 +1363,7 @@ extension ParsecViewController: UIGestureRecognizerDelegate {
 		guard next != off else { return false }
 		scrollView.setContentOffset(next, animated: false)
 		cursorContentPos = clampToContent(contentView.convert(edgeScrollPoint, from: view))
-		CParsec.sendMousePosition(Int32(cursorContentPos.x), Int32(cursorContentPos.y))
+		CParsec.sendMousePosition(viewportPoint: cursorContentPos)
 		positionCursorOverlay()
 		return true
 	}

@@ -143,10 +143,10 @@ class ParsecMetalRenderer: NSObject, MTKViewDelegate {
 		}
 		if current >= 0, let p = planes[current] {
 			let geometry = StreamGeometry(viewportSize: view.drawableSize, hostSize: frameSize)
-			enc.setViewport(MTLViewport(originX: Double((view.drawableSize.width - geometry.contentSize.width) / 2),
-										originY: Double((view.drawableSize.height - geometry.contentSize.height) / 2),
-										width: Double(geometry.contentSize.width),
-										height: Double(geometry.contentSize.height),
+			enc.setViewport(MTLViewport(originX: Double(geometry.pictureOrigin.x),
+										originY: Double(geometry.pictureOrigin.y),
+										width: Double(geometry.pictureSize.width),
+										height: Double(geometry.pictureSize.height),
 										znear: 0, zfar: 1))
 			enc.setRenderPipelineState(pipeline)
 			enc.setFragmentTexture(p.y, index: 0)

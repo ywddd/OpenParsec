@@ -214,8 +214,10 @@ class PictureInPictureManager: NSObject {
 			}
 		}
 
-		let targetWidth = lastValidStreamWidth > 0 ? lastValidStreamWidth : viewWidth
-		let targetHeight = lastValidStreamHeight > 0 ? lastValidStreamHeight : viewHeight
+		let sourceWidth = lastValidStreamWidth > 0 ? lastValidStreamWidth : streamWidth
+		let sourceHeight = lastValidStreamHeight > 0 ? lastValidStreamHeight : streamHeight
+		let targetWidth = sourceWidth > 0 ? sourceWidth : viewWidth
+		let targetHeight = sourceHeight > 0 ? sourceHeight : viewHeight
 
 		if targetWidth != captureWidth || targetHeight != captureHeight {
 			createCaptureSurface(width: targetWidth, height: targetHeight)
@@ -227,21 +229,15 @@ class PictureInPictureManager: NSObject {
 		glGetIntegerv(GLenum(GL_FRAMEBUFFER_BINDING), &currentFBO)
 		if currentFBO == 0 { return }
 
-		// Calculate the letterboxed stream region within the view
 		let geometry = StreamGeometry(
 			viewportSize: CGSize(width: CGFloat(viewWidth), height: CGFloat(viewHeight)),
-			hostSize: CGSize(width: CGFloat(lastValidStreamWidth > 0 ? lastValidStreamWidth : viewWidth),
-							 height: CGFloat(lastValidStreamHeight > 0 ? lastValidStreamHeight : viewHeight))
+			hostSize: CGSize(width: CGFloat(sourceWidth), height: CGFloat(sourceHeight))
 		)
-		let visible = geometry.visibleHostRect.intersection(CGRect(x: 0, y: 0, width: geometry.hostSize.width, height: geometry.hostSize.height))
-		let minX = visible.minX * geometry.horizontalScale
-		let minY = visible.minY * geometry.verticalScale
-		let maxX = visible.maxX * geometry.horizontalScale
-		let maxY = visible.maxY * geometry.verticalScale
-		let srcX = GLint(minX.rounded())
-		let srcY = GLint(minY.rounded())
-		let srcW = GLint(max(1, (maxX - minX).rounded()))
-		let srcH = GLint(max(1, (maxY - minY).rounded()))
+		let picture = geometry.pictureRect
+		let srcX = GLint(max(0, picture.minX).rounded())
+		let srcY = GLint(max(0, picture.minY).rounded())
+		let srcW = GLint(max(1, min(CGFloat(viewWidth), picture.maxX) - picture.minX).rounded())
+		let srcH = GLint(max(1, min(CGFloat(viewHeight), picture.maxY) - picture.minY).rounded())
 
 		// Blit view FBO → capture FBO with Y-flip
 		glBindFramebuffer(GLenum(GL_READ_FRAMEBUFFER), GLenum(currentFBO))

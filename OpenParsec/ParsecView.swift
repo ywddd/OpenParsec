@@ -39,11 +39,12 @@ struct ParsecStatusBar: View {
 		if showMenu || SettingsHandler.alwaysShowStatus {
 			VStack {
 				Text(metricInfo)
-					.frame(minWidth: 200, maxWidth: .infinity, maxHeight: 20)
+					.frame(minWidth: 200, maxWidth: .infinity, alignment: .leading)
 					.multilineTextAlignment(.leading)
 					.font(.system(size: 10))
-					.lineSpacing(20)
-					.lineLimit(nil)
+					.lineSpacing(2)
+					.fixedSize(horizontal: false, vertical: true)
+					.padding(4)
 			}
 			.background(Rectangle().fill(Color("BackgroundPrompt").opacity(0.75)))
 			.foregroundColor(Color("Foreground"))
@@ -248,7 +249,21 @@ struct ParsecStatusBar: View {
 
 		if showMenu || SettingsHandler.alwaysShowStatus {
 			let str = String.fromBuffer(&pcs.decoder.0.name.0, length: 16)
-			metricInfo = "Decode \(String(format: "%.2f", pcs.`self`.metrics.0.decodeLatency))ms    Encode \(String(format: "%.2f", pcs.`self`.metrics.0.encodeLatency))ms    Network \(String(format: "%.2f", pcs.`self`.metrics.0.networkLatency))ms    Bitrate \(String(format: "%.2f", pcs.`self`.metrics.0.bitrate))Mbps    RTx \(pcs.`self`.metrics.0.fastRTs + pcs.`self`.metrics.0.slowRTs)    Queue \(pcs.`self`.metrics.0.queuedFrames)    Draw \(String(format: "%.0f", CParsec.drawRate))fps \(CParsec.rendererName)    \(pcs.decoder.0.h265 ? "H265" : "H264") \(pcs.decoder.0.width)x\(pcs.decoder.0.height) \(pcs.decoder.0.color444 ? "4:4:4" : "4:2:0") \(str)"
+			let model = DataManager.model
+			let adaptive = (CParsec.parsecImpl as? ParsecSDKBridge)?.adaptiveDiagnostic ?? "自适应：关闭"
+			let requested = model.requestedResolutionX > 0
+				? "\(model.requestedResolutionX)x\(model.requestedResolutionY)"
+				: "-"
+			let actual = model.actualFrameWidth > 0
+				? "\(model.actualFrameWidth)x\(model.actualFrameHeight)"
+				: "等待帧"
+			let picture = model.pictureWidth > 0
+				? "\(model.pictureX),\(model.pictureY) \(model.pictureWidth)x\(model.pictureHeight)"
+				: "-"
+			let decoder = model.decoderWidth > 0
+				? "\(model.decoderWidth)x\(model.decoderHeight)"
+				: "\(pcs.decoder.0.width)x\(pcs.decoder.0.height)"
+			metricInfo = "画面：解码 \(decoder)  帧 \(actual)  请求 \(requested)  视口 \(model.viewportWidth)x\(model.viewportHeight)  画面矩形 \(picture)  \(adaptive)\n解码 \(String(format: "%.2f", pcs.`self`.metrics.0.decodeLatency))ms  编码 \(String(format: "%.2f", pcs.`self`.metrics.0.encodeLatency))ms  网络 \(String(format: "%.2f", pcs.`self`.metrics.0.networkLatency))ms  码率 \(String(format: "%.2f", pcs.`self`.metrics.0.bitrate))Mbps  重传 \(pcs.`self`.metrics.0.fastRTs + pcs.`self`.metrics.0.slowRTs)  队列 \(pcs.`self`.metrics.0.queuedFrames)  绘制 \(String(format: "%.0f", CParsec.drawRate))fps \(CParsec.rendererName)  \(pcs.decoder.0.h265 ? "H265" : "H264") \(pcs.decoder.0.color444 ? "4:4:4" : "4:2:0") \(str)"
 		}
 	}
 
@@ -544,7 +559,7 @@ struct ParsecView: View {
 							Button(action: {
 								changeResolution(res: resolution)
 							}) {
-								if resolution.width == dataModel.resolutionX && resolution.height == dataModel.resolutionY {
+								if resolution.width == dataModel.requestedResolutionX && resolution.height == dataModel.requestedResolutionY {
 									Label(resolution.desc, systemImage: "checkmark")
 								} else {
 									Text(resolution.desc)
@@ -626,6 +641,15 @@ struct ParsecView: View {
 							.frame(maxWidth: .infinity)
 							.multilineTextAlignment(.center)
 					}
+					if settingsStore.streamDisplayMode == .adaptive {
+						Text(adaptiveStatusText)
+							.font(.system(size: 11))
+							.foregroundColor(.secondary)
+							.padding(.horizontal, 8)
+							.padding(.bottom, 4)
+							.frame(maxWidth: .infinity)
+							.multilineTextAlignment(.center)
+					}
 					Button(action: openSettings) {
 						Text(L("settings"))
 							.padding(8)
@@ -670,6 +694,19 @@ struct ParsecView: View {
 			return L("reconnected_waiting")
 		}
 		return ParsecBackgroundManager.shared.lastHostname.map { String(format: L("reconnecting_to"), $0) } ?? L("reconnecting")
+	}
+
+	var adaptiveStatusText: String {
+		switch dataModel.adaptiveRequestState {
+		case .inactive:
+			return "自适应：关闭"
+		case .waiting(let target, _):
+			return "自适应：等待 \(target.width)×\(target.height)"
+		case .matched(let target):
+			return "自适应：已匹配 \(target.width)×\(target.height)"
+		case .unmatched(let target):
+			return "未匹配 \(target.width)×\(target.height)：主机未采用。请在主机“设置 → 主机 → 分辨率”选择跟随客户端，并确认虚拟显示器支持该模式；画面保持等比完整"
+		}
 	}
 
 	func post() {
@@ -787,8 +824,18 @@ struct ParsecView: View {
 	}
 
 	func applyStreamSettings() {
+		let displayModeBeforeSettings = parsecViewController.displayMode
+		let modeChanged = displayModeBeforeSettings != SettingsHandler.streamDisplayMode
+		if modeChanged && SettingsHandler.streamDisplayMode == .adaptive {
+			SettingsHandler.resolution = .client
+		}
+		DataManager.model.adaptiveResolutionPaused = SettingsHandler.resolution != .client
+		if modeChanged || SettingsHandler.resolution != resolutionAtOpen {
+			parsecViewController.resetAdaptiveResolutionRequest()
+		}
 		zoomEnabled = SettingsHandler.zoomEnabled
 		parsecViewController.setZoomEnabled(zoomEnabled)
+		parsecViewController.displayMode = SettingsHandler.streamDisplayMode
 		parsecViewController.applyDisplayMode()
 		parsecViewController.requestAdaptiveResolutionIfNeeded()
 		parsecViewController.updatePanHandle()
@@ -801,11 +848,10 @@ struct ParsecView: View {
 
 		var hostConfigChanged = false
 		if SettingsHandler.resolution != resolutionAtOpen {
-			if SettingsHandler.streamDisplayMode == .adaptive {
-				DataManager.model.adaptiveResolutionPaused = true
+			if SettingsHandler.resolution != .client {
+				DataManager.model.requestedResolutionX = SettingsHandler.resolution.width
+				DataManager.model.requestedResolutionY = SettingsHandler.resolution.height
 			}
-			DataManager.model.resolutionX = SettingsHandler.resolution.width
-			DataManager.model.resolutionY = SettingsHandler.resolution.height
 			hostConfigChanged = true
 		}
 		if SettingsHandler.constantFps != DataManager.model.constantFps {
@@ -914,6 +960,7 @@ struct ParsecView: View {
 
 		parsecViewController.scrollView.zoomScale = 1.0
 		parsecViewController.scrollView.contentOffset = .zero
+		parsecViewController.resetAdaptiveResolutionRequest()
 
 		if let c = controller {
 			c.setView(.main)
@@ -923,12 +970,19 @@ struct ParsecView: View {
 	func changeResolution(res: ParsecResolution) {
         SettingsHandler.resolution = res
 		DispatchQueue.main.async {
-			if SettingsHandler.streamDisplayMode == .adaptive {
-				DataManager.model.adaptiveResolutionPaused = res != .client
+			parsecViewController.resetAdaptiveResolutionRequest()
+			if res == .client {
+				DataManager.model.adaptiveResolutionPaused = false
+				parsecViewController.requestAdaptiveResolutionIfNeeded()
+			} else {
+				if SettingsHandler.streamDisplayMode == .adaptive {
+					DataManager.model.adaptiveResolutionPaused = true
+				}
+				DataManager.model.requestedResolutionX = res.width
+				DataManager.model.requestedResolutionY = res.height
+				DataManager.model.adaptiveRequestState = .inactive
+				CParsec.updateHostVideoConfig()
 			}
-			DataManager.model.resolutionX = res.width
-			DataManager.model.resolutionY = res.height
-			CParsec.updateHostVideoConfig()
 		}
 	}
 
@@ -978,10 +1032,17 @@ struct ParsecView: View {
 		DispatchQueue.main.async {
 			settingsStore.streamDisplayMode = settingsStore.streamDisplayMode == .adaptive ? .original : .adaptive
 			parsecViewController.displayMode = settingsStore.streamDisplayMode
+			parsecViewController.resetAdaptiveResolutionRequest()
 			if settingsStore.streamDisplayMode == .adaptive {
+				SettingsHandler.resolution = .client
 				DataManager.model.adaptiveResolutionPaused = false
+			} else {
+				DataManager.model.adaptiveRequestState = .inactive
+				DataManager.model.requestedResolutionX = 0
+				DataManager.model.requestedResolutionY = 0
 			}
 			parsecViewController.applyDisplayMode()
+			parsecViewController.requestAdaptiveResolutionIfNeeded()
 		}
 	}
 

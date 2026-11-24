@@ -58,6 +58,73 @@ jobs:
           echo "file_to_build=$file_to_build" >> $GITHUB_OUTPUT
       - name: Set Build Number
         run: /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" OpenParsec/Info.plist
+      - name: Verify stream geometry and adaptive outcomes
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          import tempfile
+          from pathlib import Path
+
+          source = r'''
+          import Foundation
+
+          func near(_ actual: CGFloat, _ expected: CGFloat, _ label: String, tolerance: CGFloat = 0.01) {
+              precondition(actual.isFinite && abs(actual - expected) <= tolerance, "\(label): \(actual) != \(expected)")
+          }
+
+          let viewport = CGSize(width: 2622, height: 1206)
+          let decodedSize = CGSize(width: 1920, height: 886)
+          let sdkSize = CGSize(width: 2880, height: 1800)
+          let decoded = StreamGeometry(viewportSize: viewport, hostSize: decodedSize)
+          near(decoded.pictureSize.height, 1206, "matching frame fills height")
+          near(decoded.pictureSize.width, 2613.45372, "matching frame fills width", tolerance: 0.1)
+          precondition(decoded.pictureRect.minX < 5 && decoded.pictureRect.minY < 0.01, "matching frame must not have four-sided shrink")
+          let rejected = StreamGeometry(viewportSize: viewport, hostSize: sdkSize)
+          near(rejected.pictureSize.width, 1929.6, "unmatched frame has side bars only")
+          near(rejected.pictureSize.height, 1206, "unmatched frame still fills height")
+          let portrait = StreamGeometry(viewportSize: CGSize(width: 1206, height: 2622), hostSize: sdkSize)
+          near(portrait.pictureSize.width, 1206, "portrait native fit width")
+          near(portrait.pictureSize.height, 753.75, "portrait native fit height")
+          near(portrait.pictureOrigin.y, 934.125, "portrait native fit centered")
+
+          let sdkGeometry = StreamGeometry(viewportSize: viewport, hostSize: sdkSize)
+          let fractions = [CGPoint.zero, CGPoint(x: 1, y: 0), CGPoint(x: 0, y: 1), CGPoint(x: 1, y: 1), CGPoint(x: 0.5, y: 0.5)]
+          for fraction in fractions {
+              let hostPoint = CGPoint(x: decodedSize.width * fraction.x, y: decodedSize.height * fraction.y)
+              let screenPoint = decoded.screenPoint(forHostPoint: hostPoint)
+              let restored = decoded.hostPoint(forScreenPoint: screenPoint)
+              near(restored.x, hostPoint.x, "host-screen round trip x")
+              near(restored.y, hostPoint.y, "host-screen round trip y")
+              let sdkPoint = decoded.sdkPoint(forViewportPoint: screenPoint, sdkHostSize: sdkSize)
+              let expectedSDK = sdkGeometry.screenPoint(forHostPoint: CGPoint(x: sdkSize.width * fraction.x, y: sdkSize.height * fraction.y))
+              near(sdkPoint.x, expectedSDK.x, "different decoder/frame SDK projection x")
+              near(sdkPoint.y, expectedSDK.y, "different decoder/frame SDK projection y")
+              let returned = decoded.viewportPoint(forSDKPoint: sdkPoint, sdkHostSize: sdkSize)
+              near(returned.x, screenPoint.x, "SDK-screen round trip x")
+              near(returned.y, screenPoint.y, "SDK-screen round trip y")
+          }
+
+          let target = AdaptiveHostResolution.target(for: CGSize(width: 874, height: 402), nativeScale: 3)!
+          precondition(target == AdaptiveHostResolution(width: 2622, height: 1206), "prefer host-supported native phone resolution")
+          let oddTarget = AdaptiveHostResolution.target(for: CGSize(width: 2200, height: 1015), nativeScale: 1)!
+          precondition(oddTarget == AdaptiveHostResolution(width: 2200, height: 1016), "nearest-even native target")
+          let largeTarget = AdaptiveHostResolution.target(for: CGSize(width: 2200, height: 1015), nativeScale: 3)!
+          precondition(largeTarget == AdaptiveHostResolution(width: 3840, height: 1772), "4K-cap preserves aspect")
+          precondition(AdaptiveHostResolution.target(for: CGSize(width: 1015, height: 2200), nativeScale: 3) == nil, "portrait must not request landscape resolution")
+          precondition(AdaptiveHostResolution.nearestEven(100.6) == 100 && AdaptiveHostResolution.nearestEven(101.6) == 102, "direct nearest-even rounding")
+          var tracker = AdaptiveResolutionRequestTracker(target: target, requestedAt: 0)
+          precondition(tracker.observe(frame: StreamPixelSize(sdkSize), now: 1, timeout: 6).isWaiting, "sent is not accepted")
+          precondition(tracker.observe(frame: StreamPixelSize(sdkSize), now: 7, timeout: 6) == .unmatched(target), "unmatched host must be exposed")
+          precondition(tracker.observe(frame: StreamPixelSize(width: 2622, height: 1206), now: 8, timeout: 6) == .matched(target), "late accepted frame resolves timeout")
+          print("Stream geometry, screenshot regression, SDK mapping and adaptive outcomes passed")
+          '''
+          with tempfile.TemporaryDirectory(prefix='openparsec-geometry-') as temporary:
+              main_path = Path(temporary) / 'main.swift'
+              binary_path = Path(temporary) / 'geometry-check'
+              main_path.write_text(source, encoding='utf-8')
+              subprocess.run(['swiftc', 'OpenParsec/StreamGeometry.swift', str(main_path), '-o', str(binary_path)], check=True)
+              subprocess.run([str(binary_path)], check=True)
+          PY
       - name: Archive
         env:
           scheme: ${{ steps.scheme.outputs.scheme }}

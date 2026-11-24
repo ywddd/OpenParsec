@@ -57,9 +57,15 @@ class ParsecGLKRenderer: NSObject, GLKViewDelegate, GLKViewControllerDelegate {
 
 		viewportContext.x = 0
 		viewportContext.y = 0
+		var actualWidth = CParsec.actualFrameWidth
+		var actualHeight = CParsec.actualFrameHeight
+		if actualWidth <= 0 || actualHeight <= 0 {
+			actualWidth = CParsec.hostWidth
+			actualHeight = CParsec.hostHeight
+		}
 		let geometry = StreamGeometry(
 			viewportSize: CGSize(width: view.drawableWidth, height: view.drawableHeight),
-			hostSize: CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight))
+			hostSize: CGSize(width: CGFloat(actualWidth), height: CGFloat(actualHeight))
 		)
 		viewportContext.x = Int(((CGFloat(view.drawableWidth) - geometry.contentSize.width) / 2).rounded())
 		viewportContext.y = Int(((CGFloat(view.drawableHeight) - geometry.contentSize.height) / 2).rounded())
@@ -82,8 +88,8 @@ class ParsecGLKRenderer: NSObject, GLKViewDelegate, GLKViewControllerDelegate {
 			PictureInPictureManager.shared.captureFrame(
 				viewWidth: GLsizei(view.drawableWidth),
 				viewHeight: GLsizei(view.drawableHeight),
-				streamWidth: GLsizei(CParsec.hostWidth),
-				streamHeight: GLsizei(CParsec.hostHeight)
+				streamWidth: GLsizei(actualWidth),
+				streamHeight: GLsizei(actualHeight)
 			)
 		}
 

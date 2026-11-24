@@ -45,8 +45,21 @@ class CursorPositionHelper {
 class SharedModel: ObservableObject {
 	@Published var resolutionX = 0
 	@Published var resolutionY = 0
+	@Published var decoderWidth = 0
+	@Published var decoderHeight = 0
+	@Published var actualFrameWidth = 0
+	@Published var actualFrameHeight = 0
 	@Published var adaptiveResolution: AdaptiveHostResolution?
 	@Published var adaptiveResolutionPaused = false
+	@Published var adaptiveRequestState: AdaptiveRequestState = .inactive
+	@Published var requestedResolutionX = 0
+	@Published var requestedResolutionY = 0
+	@Published var viewportWidth = 0
+	@Published var viewportHeight = 0
+	@Published var pictureWidth = 0
+	@Published var pictureHeight = 0
+	@Published var pictureX = 0
+	@Published var pictureY = 0
 	@Published var bitrate = 0
 	@Published var hostDefaultBitrate = 0
 	@Published var constantFps = false
@@ -57,8 +70,21 @@ class SharedModel: ObservableObject {
 	func reset() {
 		resolutionX = 0
 		resolutionY = 0
+		decoderWidth = 0
+		decoderHeight = 0
+		actualFrameWidth = 0
+		actualFrameHeight = 0
 		adaptiveResolution = nil
 		adaptiveResolutionPaused = false
+		adaptiveRequestState = .inactive
+		requestedResolutionX = 0
+		requestedResolutionY = 0
+		viewportWidth = 0
+		viewportHeight = 0
+		pictureWidth = 0
+		pictureHeight = 0
+		pictureX = 0
+		pictureY = 0
 		bitrate = 0
 		hostDefaultBitrate = 0
 		constantFps = false

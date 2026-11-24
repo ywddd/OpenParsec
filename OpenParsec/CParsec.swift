@@ -152,9 +152,12 @@ protocol ParsecService {
 	func setMuted(_ muted: Bool)
 	func applyConfig()
 	func sendMouseMessage(_ button: ParsecMouseButton, _ x: Int32, _ y: Int32, _ pressed: Bool)
+	func sendMouseMessage(_ button: ParsecMouseButton, viewportPoint: CGPoint, _ pressed: Bool)
 	func sendMouseClickMessage(_ button: ParsecMouseButton, _ pressed: Bool)
 	func sendMouseDelta(_ dx: Int32, _ dy: Int32)
 	func sendMousePosition(_ x: Int32, _ y: Int32)
+	func sendMousePosition(viewportPoint: CGPoint)
+	func sendMousePosition(pixelPoint: CGPoint)
 	func sendKeyboardMessage(event: KeyBoardKeyEvent)
 	func sendKeyboardMessage(keyCode: UInt32, pressed: Bool)
 	func sendVirtualKeyboardInput(text: String)
@@ -177,6 +180,14 @@ class CParsec {
 	}
 	public static var hostHeight: Float {
 		return parsecImpl.hostHeight
+	}
+	public static var actualFrameWidth: Float {
+		guard let bridge = parsecImpl as? ParsecSDKBridge else { return hostWidth }
+		return Float(bridge.actualHostSize.width)
+	}
+	public static var actualFrameHeight: Float {
+		guard let bridge = parsecImpl as? ParsecSDKBridge else { return hostHeight }
+		return Float(bridge.actualHostSize.height)
 	}
 
 	public static var clientWidth: Float {
@@ -254,6 +265,10 @@ class CParsec {
 		parsecImpl.sendMouseMessage(button, x, y, pressed)
 	}
 
+	static func sendMouseMessage(_ button: ParsecMouseButton, viewportPoint: CGPoint, _ pressed: Bool) {
+		parsecImpl.sendMouseMessage(button, viewportPoint: viewportPoint, pressed)
+	}
+
 	static func sendMouseClickMessage(_ button: ParsecMouseButton, _ pressed: Bool) {
 		parsecImpl.sendMouseClickMessage(button, pressed)
 	}
@@ -264,6 +279,14 @@ class CParsec {
 
 	static func sendMousePosition(_ x: Int32, _ y: Int32) {
 		parsecImpl.sendMousePosition(x, y)
+	}
+
+	static func sendMousePosition(viewportPoint: CGPoint) {
+		parsecImpl.sendMousePosition(viewportPoint: viewportPoint)
+	}
+
+	static func sendMousePosition(pixelPoint: CGPoint) {
+		parsecImpl.sendMousePosition(pixelPoint: pixelPoint)
 	}
 
 	static func sendKeyboardMessage(event: KeyBoardKeyEvent) {
