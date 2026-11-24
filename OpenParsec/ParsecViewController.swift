@@ -249,10 +249,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		}
 		scrollView.contentOffset = geometry.scrollOffset
 		visibleContentRect = CGRect(origin: geometry.scrollOffset, size: viewport)
-		let newSdkScale = StreamGeometry.sdkScale(for: geometry)
-		// The SDK needs one scale for its input coordinate translation. For non-uniform fill,
-		// advertise the average axis scale; renderers use the exact x/y geometry independently.
-		CParsec.setFrame(geometry.contentSize.width, geometry.contentSize.height, newSdkScale)
+		CParsec.setFrame(geometry.contentSize.width, geometry.contentSize.height, UIScreen.main.scale)
 		CParsec.sendMousePosition(Int32(cursorContentPos.x), Int32(cursorContentPos.y))
 		positionCursorOverlay()
 	}
@@ -449,7 +446,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		}
 		scrollView.contentOffset = geometry.scrollOffset
 		visibleContentRect = CGRect(origin: geometry.scrollOffset, size: CGSize(width: width, height: height))
-		CParsec.setFrame(geometry.contentSize.width, geometry.contentSize.height, geometry.sdkScale)
+		CParsec.setFrame(geometry.contentSize.width, geometry.contentSize.height, UIScreen.main.scale)
 	}
 
 	func syncHostSizeIfNeeded() {

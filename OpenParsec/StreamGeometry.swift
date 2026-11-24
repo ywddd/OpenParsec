@@ -1,5 +1,4 @@
 import CoreGraphics
-import UIKit
 
 enum StreamDisplayMode: Int {
 	case fill = 0
@@ -66,23 +65,6 @@ struct StreamGeometry {
 					  y: scrollOffset.y / verticalScale,
 					  width: viewportSize.width / horizontalScale,
 					  height: viewportSize.height / verticalScale)
-	}
-
-	// ParsecClientSetDimensions accepts one scale for both axes. Fill stretches each axis
-	// independently, so the SDK scale is only used for input translation; renderers use the
-	// exact horizontalScale/verticalScale instead.
-	var sdkScale: CGFloat {
-		switch mode {
-		case .fill:
-			guard validSize else { return UIScreen.main.scale }
-			return (horizontalScale + verticalScale) / 2
-		case .fit:
-			return UIScreen.main.scale
-		}
-	}
-
-	static func sdkScale(for geometry: StreamGeometry) -> CGFloat {
-		geometry.sdkScale
 	}
 
 	func screenPoint(forHostPoint point: CGPoint) -> CGPoint {
