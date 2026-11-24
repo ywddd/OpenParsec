@@ -250,7 +250,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		scrollView.contentOffset = geometry.scrollOffset
 		visibleContentRect = CGRect(origin: geometry.scrollOffset, size: viewport)
 		CParsec.setFrame(geometry.contentSize.width, geometry.contentSize.height, UIScreen.main.scale)
-		CParsec.sendMousePosition(Int32(cursorContentPos.x), Int32(cursorContentPos.y))
+		cursorContentPos = CGPoint(x: CGFloat(CParsec.mouseInfo.mouseX), y: CGFloat(CParsec.mouseInfo.mouseY))
 		positionCursorOverlay()
 	}
 
