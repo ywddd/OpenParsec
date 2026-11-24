@@ -96,6 +96,8 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	var visibleContentRect: CGRect = .zero
 	var lastLaidOutWidth: CGFloat = 0
 	var lastLaidOutHeight: CGFloat = 0
+	private var lastAppliedHostSize: CGSize = .zero
+	private var lastAppliedViewportSize: CGSize = .zero
 
 	override var prefersPointerLocked: Bool {
 		return true
@@ -228,6 +230,8 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		let hostSize = CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight))
 		let viewport = view.bounds.size
 		guard hostSize.width > 0, hostSize.height > 0, viewport.width > 0, viewport.height > 0 else { return }
+		lastAppliedHostSize = hostSize
+		lastAppliedViewportSize = viewport
 		stopMomentum()
 		scrollView.zoomScale = 1.0
 		let geometry = StreamGeometry(viewportSize: viewport, hostSize: hostSize, mode: displayMode)
@@ -418,12 +422,15 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 
 	private func applyStreamLayout(width: CGFloat, height: CGFloat) {
 		let hostSize = CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight))
+		let viewport = CGSize(width: width, height: height)
 		guard hostSize.width > 0, hostSize.height > 0 else {
 			contentView.frame.size = CGSize(width: width, height: height)
 			scrollView.contentSize = CGSize(width: width, height: height)
 			return
 		}
-		let geometry = StreamGeometry(viewportSize: CGSize(width: width, height: height), hostSize: hostSize, mode: displayMode)
+		lastAppliedHostSize = hostSize
+		lastAppliedViewportSize = viewport
+		let geometry = StreamGeometry(viewportSize: viewport, hostSize: hostSize, mode: displayMode)
 		glkView.updateSize(width: geometry.contentSize.width, height: geometry.contentSize.height)
 		contentView.frame = CGRect(origin: .zero, size: geometry.contentSize)
 		scrollView.contentSize = geometry.contentSize
@@ -434,6 +441,15 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		scrollView.contentOffset = geometry.scrollOffset
 		visibleContentRect = CGRect(origin: geometry.scrollOffset, size: CGSize(width: width, height: height))
 		CParsec.setFrame(geometry.contentSize.width, geometry.contentSize.height, UIScreen.main.scale)
+	}
+
+	func syncHostSizeIfNeeded() {
+		guard scrollView != nil else { return }
+		let hostSize = CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight))
+		let viewport = view.bounds.size
+		guard hostSize.width > 0, hostSize.height > 0, viewport.width > 0, viewport.height > 0 else { return }
+		guard hostSize != lastAppliedHostSize || viewport != lastAppliedViewportSize else { return }
+		applyDisplayMode()
 	}
 
 	override func viewDidAppear(_ animated: Bool) {
@@ -1136,8 +1152,9 @@ extension ParsecViewController: UIGestureRecognizerDelegate {
 		guard let u = u else { return }
 		let zoom = scrollView.zoomScale
 		let off = scrollView.contentOffset
-		let screenX = cursorContentPos.x * zoom - off.x
-		let screenY = cursorContentPos.y * zoom - off.y
+		let contentOrigin = contentView.frame.origin
+		let screenX = contentOrigin.x + cursorContentPos.x * zoom - off.x
+		let screenY = contentOrigin.y + cursorContentPos.y * zoom - off.y
 		let cs = CGFloat(SettingsHandler.cursorScale)
 		let hotX = CGFloat(CParsec.mouseInfo.cursorHotX) * cs
 		let hotY = CGFloat(CParsec.mouseInfo.cursorHotY) * cs

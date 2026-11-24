@@ -89,6 +89,7 @@ struct ParsecStatusBar: View {
 
 		var pcs = ParsecClientStatus()
 		var status = CParsec.getStatusEx(&pcs)
+		parsecViewController?.syncHostSizeIfNeeded()
 
 		var pipActive = false
 		if #available(iOS 15.0, *) {
