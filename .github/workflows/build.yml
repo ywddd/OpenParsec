@@ -127,13 +127,63 @@ jobs:
           precondition(tracker.observe(frame: StreamPixelSize(sdkSize), now: 1, timeout: 6).isWaiting, "sent is not accepted")
           precondition(tracker.observe(frame: StreamPixelSize(sdkSize), now: 7, timeout: 6) == .unmatched(target), "unmatched host must be exposed")
           precondition(tracker.observe(frame: StreamPixelSize(width: 2622, height: 1206), now: 8, timeout: 6) == .matched(target), "late accepted frame resolves timeout")
+          let touchViewport = CGSize(width: 400, height: 800)
+          let initialOffset = CGPoint(x: 120, y: 240)
+          let contentAnchor = StreamViewportMath.contentAnchor(at: CGPoint(x: 150, y: 250), zoomScale: 2, contentOffset: initialOffset)
+          let zoomOffset = StreamViewportMath.contentOffset(anchoring: contentAnchor, at: CGPoint(x: 180, y: 270), zoomScale: 3, contentSize: touchViewport, viewportSize: touchViewport)
+          near(zoomOffset.x, 225, "pinch keeps horizontal anchor with midpoint translation")
+          near(zoomOffset.y, 465, "pinch keeps vertical anchor with midpoint translation")
+          let translateOnly = StreamViewportMath.contentOffset(anchoring: contentAnchor, at: CGPoint(x: 180, y: 270), zoomScale: 2, contentSize: touchViewport, viewportSize: touchViewport)
+          near(translateOnly.x, 90, "unchanged pinch distance still pans horizontally")
+          near(translateOnly.y, 220, "unchanged pinch distance still pans vertically")
+          let pan = StreamViewportMath.pannedOffset(from: initialOffset, translation: CGPoint(x: 60, y: 100), contentSize: touchViewport, viewportSize: touchViewport, zoomScale: 2)
+          near(pan.x, 60, "pan follows finger horizontally")
+          near(pan.y, 140, "pan follows finger vertically")
+          let upper = StreamViewportMath.clampedOffset(CGPoint(x: 9999, y: 9999), contentSize: touchViewport, viewportSize: touchViewport, zoomScale: 2)
+          near(upper.x, 400, "right edge clamp")
+          near(upper.y, 800, "bottom edge clamp")
+          precondition(StreamViewportMath.clampedOffset(CGPoint(x: -100, y: -100), contentSize: touchViewport, viewportSize: touchViewport, zoomScale: 2) == .zero, "top and left edge clamp")
+          precondition(StreamViewportMath.clampedOffset(initialOffset, contentSize: touchViewport, viewportSize: touchViewport, zoomScale: 1) == .zero, "reset viewport fits at one times")
+          let startTouch = StreamTwoFingerSample(distance: 100, midpoint: CGPoint(x: 100, y: 100))
+          let pinchTouch = StreamTwoFingerSample(distance: 150, midpoint: CGPoint(x: 100, y: 100))
+          let moveTouch = StreamTwoFingerSample(distance: 100, midpoint: CGPoint(x: 150, y: 140))
+          precondition(StreamViewportMath.classifyTwoFinger(start: startTouch, current: startTouch, zoomEnabled: true, isZoomed: true) == .undecided, "two finger tap doesn't navigate")
+          precondition(StreamViewportMath.classifyTwoFinger(start: startTouch, current: pinchTouch, zoomEnabled: true, isZoomed: true) == .zoom, "already zoomed can still pinch")
+          precondition(StreamViewportMath.classifyTwoFinger(start: startTouch, current: moveTouch, zoomEnabled: true, isZoomed: true) == .pan, "zoomed translation navigates viewport not host wheel")
+          precondition(StreamViewportMath.classifyTwoFinger(start: startTouch, current: moveTouch, zoomEnabled: false, isZoomed: true) == .pan, "pan remains available when pinch disabled")
+          precondition(StreamViewportMath.classifyTwoFinger(start: startTouch, current: moveTouch, zoomEnabled: true, isZoomed: false) == .scroll, "one times two finger translation scrolls remote app")
+          func textPlan(_ text: String, mode: TextInputMode = .text) -> RemoteInputPlan {
+              switch RemoteInputPolicy.makePlan(text: text, mode: mode, shortcut: .controlV) {
+              case .success(let plan): return plan
+              case .failure(let failure): preconditionFailure("unexpected text plan failure: \(failure)")
+              }
+          }
+          precondition(textPlan("你好👩‍💻").actions == [.pasteText("你好👩‍💻")], "committed CJK and emoji stay Unicode text")
+          precondition(textPlan("ENTER").actions == [.pasteText("ENTER")], "literal text is not a named key")
+          precondition(textPlan("你好\r\nworld\t!").actions == [.pasteText("你好"), .keyPress("ENTER"), .pasteText("world"), .keyPress("TAB"), .pasteText("!")], "text and special key order preserved")
+          precondition(textPlan("abc123", mode: .keys).actions == [.keyPress("a"), .keyPress("b"), .keyPress("c"), .keyPress("1"), .keyPress("2"), .keyPress("3")], "multi-character key input isn't dropped")
+          precondition(textPlan("ENTER", mode: .keys).actions == [.keyPress("E"), .keyPress("N"), .keyPress("T"), .keyPress("E"), .keyPress("R")], "committed ASCII never interpreted as a shortcut name")
+          precondition(RemoteInputPolicy.keyNames(for: "\r\n") == ["ENTER"], "CRLF is one return")
+          precondition(RemoteInputPolicy.makePlan(text: "中文", mode: .keys, shortcut: .controlV) == .failure(.unsupportedUnicode), "unsupported Unicode key input explicit")
+          precondition(RemoteInputPolicy.makePlan(text: "a\0b", mode: .text, shortcut: .controlV) == .failure(.unsupportedUnicode), "NUL cannot truncate remote text")
+          precondition(RemoteInputPolicy.makePlan(text: String(repeating: "a", count: RemoteInputPolicy.maxTextBytes + 1), mode: .text, shortcut: .controlV) == .failure(.tooLong), "text size bounded")
+          let family = "👩‍👩‍👧‍👦"
+          switch RemoteInputPolicy.utf8Chunks(of: "你" + family + "好", maxBytes: family.utf8.count) {
+          case .success(let chunks):
+              precondition(chunks.joined() == "你" + family + "好", "chunks preserve original Unicode")
+              precondition(chunks.contains(family) && chunks.allSatisfy { $0.utf8.count <= family.utf8.count }, "chunks never split a composed character")
+          case .failure: preconditionFailure("valid Unicode chunking rejected")
+          }
+          precondition(RemoteInputPolicy.utf8Chunks(of: family, maxBytes: 4) == .failure(.tooLong), "oversize grapheme fails rather than corrupting")
+          precondition(RemoteInputPolicy.pasteChord(for: .controlV) == RemotePasteChord(modifierKeyCode: 224, keyCode: 25), "Windows paste shortcut")
+          precondition(RemoteInputPolicy.pasteChord(for: .commandV) == RemotePasteChord(modifierKeyCode: 227, keyCode: 25), "macOS paste shortcut")
           print("Stream geometry, screenshot regression, SDK mapping and adaptive outcomes passed")
           '''
           with tempfile.TemporaryDirectory(prefix='openparsec-geometry-') as temporary:
               main_path = Path(temporary) / 'main.swift'
               binary_path = Path(temporary) / 'geometry-check'
               main_path.write_text(source, encoding='utf-8')
-              subprocess.run(['swiftc', 'OpenParsec/StreamGeometry.swift', str(main_path), '-o', str(binary_path)], check=True)
+              subprocess.run(['swiftc', 'OpenParsec/StreamGeometry.swift', 'OpenParsec/RemoteInputPolicy.swift', str(main_path), '-o', str(binary_path)], check=True)
               subprocess.run([str(binary_path)], check=True)
           PY
       - name: Archive

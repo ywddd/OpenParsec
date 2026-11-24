@@ -11,6 +11,9 @@ final class ClipboardSync {
 	private let maxTextBytes = 1 << 20
 	private let pollInterval: TimeInterval = 1
 	private var timer: Timer?
+	private var textTransactionDepth = 0
+	private var expectedTextEchoes: [String] = []
+	private var expectedEchoExpiry: Date?
 
 	// Persisted so a copy made before launching the app still reaches the host, while an
 	// unchanged pasteboard does not overwrite the host clipboard on every connection.
@@ -32,17 +35,50 @@ final class ClipboardSync {
 		timer = nil
 	}
 
+	func beginTextTransaction() {
+		textTransactionDepth = 1
+	}
+
+	func expectTextEcho(_ text: String) {
+		expectedTextEchoes.append(text)
+		if expectedTextEchoes.count > 16 {
+			expectedTextEchoes.removeFirst(expectedTextEchoes.count - 16)
+		}
+		expectedEchoExpiry = Date().addingTimeInterval(5)
+	}
+
+	func endTextTransaction() {
+		textTransactionDepth = 0
+	}
+
 	func receive(_ text: String) {
 		// Off by default because the host would otherwise overwrite the local clipboard.
 		guard SettingsHandler.clipboardSync else { return }
 		DispatchQueue.main.async {
+			guard !self.isTextTransactionActive, !self.consumeExpectedEcho(text) else { return }
 			UIPasteboard.general.string = text
 			self.lastChangeCount = UIPasteboard.general.changeCount
 		}
 	}
 
+	private var isTextTransactionActive: Bool {
+		textTransactionDepth > 0
+	}
+
+	private func consumeExpectedEcho(_ text: String) -> Bool {
+		if let expiry = expectedEchoExpiry, expiry < Date() {
+			expectedTextEchoes.removeAll()
+			expectedEchoExpiry = nil
+			return false
+		}
+		guard let index = expectedTextEchoes.firstIndex(of: text) else { return false }
+		expectedTextEchoes.remove(at: index)
+		return true
+	}
+
 	private func sendIfChanged() {
 		guard SettingsHandler.clipboardSync else { return }
+		guard !isTextTransactionActive else { return }
 		let pasteboard = UIPasteboard.general
 		guard pasteboard.changeCount != lastChangeCount,
 			UIApplication.shared.applicationState == .active,

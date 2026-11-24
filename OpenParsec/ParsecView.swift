@@ -299,6 +299,7 @@ struct ParsecView: View {
 	@State var hideKeyboardButton: Bool = false
 	@AppStorage("keyboardHintShown") var keyboardHintShown: Bool = false
 	@AppStorage("keyboardPanHintShown") var keyboardPanHintShown: Bool = false
+	@AppStorage("mobileGestureHintShown") var mobileGestureHintShown: Bool = false
 	@State var hint: String?
 	@State var showMenu: Bool = false
 	@State var menuRowsHeight: CGFloat = 0
@@ -452,19 +453,42 @@ struct ParsecView: View {
 							Spacer()
 						}
 					}
-					if !hideKeyboardButton {
-						HStack {
+					if !hideOverlay && !hideKeyboardButton {
+						HStack(spacing: 6) {
 							Button(action: toggleKeyboard) {
 								Image(systemName: "keyboard")
 									.resizable()
 									.aspectRatio(contentMode: .fit)
-									.frame(width: 32, height: 32)
+									.frame(width: 24, height: 24)
 									.foregroundColor(Color("Foreground"))
-									.padding(8)
+									.frame(width: 44, height: 44)
 									.background(Rectangle().fill(Color("BackgroundPrompt").opacity(showKeyboard ? 0.75 : 0.5)))
 									.cornerRadius(8)
 							}
 							.padding(.leading)
+							.accessibilityLabel(L("keyboard"))
+							Button(action: toggleTouchMode) {
+								Image(systemName: settingsStore.cursorMode == .direct ? "hand.point.up.left" : "computermouse")
+									.resizable()
+									.aspectRatio(contentMode: .fit)
+									.frame(width: 24, height: 24)
+									.foregroundColor(Color("Foreground"))
+									.frame(width: 44, height: 44)
+									.background(Rectangle().fill(Color("BackgroundPrompt").opacity(0.5)))
+									.cornerRadius(8)
+							}
+							.accessibilityLabel(String(format: L("touch_mode_state"), L(settingsStore.cursorMode == .direct ? "direct" : "touchpad")))
+							Button(action: resetViewport) {
+								Image(systemName: "arrow.counterclockwise")
+									.resizable()
+									.aspectRatio(contentMode: .fit)
+									.frame(width: 24, height: 24)
+									.foregroundColor(Color("Foreground"))
+									.frame(width: 44, height: 44)
+									.background(Rectangle().fill(Color("BackgroundPrompt").opacity(0.5)))
+									.cornerRadius(8)
+							}
+							.accessibilityLabel(L("reset_view"))
 							.edgesIgnoringSafeArea(.all)
 							Spacer()
 						}
@@ -517,6 +541,16 @@ struct ParsecView: View {
 			}
 		}
 		.onAppear(perform: post)
+		.onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RemoteTextInputFailure"))) { notification in
+			let message = (notification.userInfo?["message"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+			guard let message = message, !message.isEmpty else { return }
+			withAnimation { hint = message }
+			DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+				if hint == message {
+					withAnimation { hint = nil }
+				}
+			}
+		}
 		.onChange(of: verticalSizeClass) { _ in
 			guard SettingsHandler.streamDisplayMode == .adaptive else { return }
 			parsecViewController.requestAdaptiveResolutionIfNeeded()
@@ -635,6 +669,24 @@ struct ParsecView: View {
 							.frame(maxWidth: .infinity)
 							.multilineTextAlignment(.center)
 					}
+					Button(action: toggleTextInputMode) {
+						Text(String(format: L("text_input_state"), L(settingsStore.textInputMode == .text ? "text_input_text" : "text_input_keys")))
+							.padding(8)
+							.frame(maxWidth: .infinity)
+							.multilineTextAlignment(.center)
+					}
+					Button(action: rightClick) {
+						Text(L("right_click_now"))
+							.padding(8)
+							.frame(maxWidth: .infinity)
+							.multilineTextAlignment(.center)
+					}
+					Button(action: resetViewport) {
+						Text(L("reset_view"))
+							.padding(8)
+							.frame(maxWidth: .infinity)
+							.multilineTextAlignment(.center)
+					}
 					Button(action: toggleDisplayMode) {
 						Text(String(format: L("display_mode_state"), L(settingsStore.streamDisplayMode == .adaptive ? "display_fill" : "display_fit")))
 							.padding(8)
@@ -661,7 +713,7 @@ struct ParsecView: View {
 					Color.clear.preference(key: MenuRowsHeightKey.self, value: proxy.size.height)
 				})
 			}
-			.frame(maxHeight: menuRowsHeight)
+			.frame(maxHeight: min(menuRowsHeight, UIScreen.main.bounds.height * 0.58))
 			.onPreferenceChange(MenuRowsHeightKey.self) { menuRowsHeight = $0 }
 			Rectangle()
 				.fill(Color("Foreground"))
@@ -810,6 +862,7 @@ struct ParsecView: View {
 		}
 
 		parsecViewController.setKeyboardVisible(showKeyboard)
+		showMobileGestureHintIfNeeded()
 	}
 
 	func openSettings() {
@@ -900,7 +953,20 @@ struct ParsecView: View {
 		let text = [menu ? L("menu_swipe_hint") : nil, keyboard ? L("keyboard_hint") : nil].compactMap { $0 }.joined(separator: "\n")
 		withAnimation { hint = text }
 		DispatchQueue.main.asyncAfter(deadline: .now() + (menu && keyboard ? 6 : 4)) {
-			withAnimation { hint = nil }
+				if hint == text {
+					withAnimation { hint = nil }
+				}
+		}
+	}
+
+	func showMobileGestureHintIfNeeded() {
+		guard !mobileGestureHintShown else { return }
+		mobileGestureHintShown = true
+		withAnimation { hint = L("gesture_tips") }
+		DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
+			if hint == L("gesture_tips") {
+				withAnimation { hint = nil }
+			}
 		}
 	}
 
@@ -1025,6 +1091,28 @@ struct ParsecView: View {
 		DispatchQueue.main.async {
 			SettingsHandler.cursorMode = SettingsHandler.cursorMode == .direct ? .touchpad : .direct
 			parsecViewController.updatePanHandle()
+		}
+	}
+
+	func toggleTextInputMode() {
+		DispatchQueue.main.async {
+			CParsec.cancelPendingTextInput()
+			settingsStore.textInputMode = settingsStore.textInputMode == .text ? .keys : .text
+			parsecViewController.setKeyboardVisible(showKeyboard)
+		}
+	}
+
+	func resetViewport() {
+		parsecViewController.resetViewport()
+	}
+
+	func rightClick() {
+		showMenu = false
+		DispatchQueue.main.async {
+			guard UIApplication.shared.applicationState == .active,
+				  ParsecBackgroundManager.shared.hasActiveConnection else { return }
+			CParsec.sendMouseClickMessage(MOUSE_R, true)
+			CParsec.sendMouseClickMessage(MOUSE_R, false)
 		}
 	}
 

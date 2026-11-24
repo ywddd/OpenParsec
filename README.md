@@ -27,16 +27,27 @@ Touch modes can be set in Settings or the stream menu. Touchpad moves the cursor
 | --- | --- |
 | Tap | Click |
 | 2-finger tap | Right click |
-| Press and hold | Drag (Touchpad) |
-| 2-finger drag | Scroll |
-| Pinch | Zoom, with Pinch to Zoom on |
+| Press and hold | Hold the left button and drag, including files (Touchpad or Direct) |
+| 2-finger drag | Scroll at 1×; pan the zoomed viewport when zoomed |
+| 1-finger drag | Move the cursor (Touchpad); pan the zoomed viewport (Direct) |
+| Pinch | Zoom around the fingers, with Pinch to Zoom on |
 | 3-finger tap | On-screen keyboard |
 | Swipe in from the left edge | Stream menu, when the buttons are hidden |
+
+The stream screen's keyboard toolbar keeps keyboard, pointer/direct mode, and viewport reset in a compact 44-point action cluster. If **Show Keyboard Button** is off, that cluster is hidden; pointer/direct mode, viewport reset, right-click, text/key input mode, zoom, and display mode remain in the stream menu, and the keyboard can still be toggled with a three-finger tap. The first connection shows a one-time gesture hint. Disconnect remains outside the scrollable menu area on small screens.
+
+Direct mode semantics are explicit: at 1× a tap places and clicks the host pointer at that remote position; once zoomed, a one-finger drag pans the visible viewport instead of moving the pointer or dragging a remote item. Press and hold still holds the left button for file drags. Pinch to Zoom uses the saved preference and is off by default; enable it in Settings or the stream menu.
 
 ## Mouse & Keyboard
 Hardware mice and keyboards are supported.
 
 Option Key as Command can be turned on in Settings for Mac hosts.
+
+### Text input and host clipboard (Chinese version)
+
+The keyboard has two modes, selectable in **设置 → 输入方式** or the stream menu. **文字输入** receives native IME composition, Chinese candidates, English, emoji, and multi-character paste, then commits the final text once through the host clipboard and triggers an explicit paste shortcut. It never reads or writes the phone's clipboard and does not require global clipboard sync to be enabled, but it does replace the host clipboard. The default paste shortcut is Windows `Ctrl+V`; choose macOS `Cmd+V` in Settings when the host needs it.
+
+**按键输入** sends ASCII characters and named special keys for host IMEs, games, and applications that block paste. Native Chinese candidates or other non-ASCII text from the phone's IME are rejected in this mode; to type Chinese, enable a Chinese IME on the Windows host and use key mode there. The current Parsec SDK keyboard path sends key codes rather than Unicode text, so it cannot inject arbitrary Chinese characters. If the host application blocks clipboard paste, use key mode or enable the host's clipboard handling; sending a paste command does not guarantee every application or password field accepted it.
 
 ## Game Controllers
 One controller is supported. Pressing any trigger during a stream registers it with Parsec. The host needs the virtual USB driver installed.
@@ -59,6 +70,8 @@ The stream pauses in the background, resumes on return and reconnects after a ne
 串流菜单会显示“等待 / 已匹配 / 未匹配”，并报告请求分辨率、实际视频帧、解码器状态以及画面矩形。实际画面未匹配时，仍完整等比显示，并提示主机设置；不会用裁剪或拉伸伪装成功。
 
 构建中的数值回归验证截图尺寸、SDK 与可见帧尺寸不一致的坐标映射、偶数取整和请求超时。源码审核和编译通过不代替手机实机验收。
+
+输入法候选、第三方键盘、放大后的四向拖动、长按拖文件、右键、复位和键盘开关仍需在真机分别验证；不同主机系统、主机剪贴板设置和应用粘贴策略可能不同，不能以编译成功代替运行时验收。
 
 ## Troubleshooting
 Error codes are explained on Parsec's [error codes page](https://support.parsec.app/hc/en-us/articles/32381281333012-All-Error-Codes).

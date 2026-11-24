@@ -84,6 +84,19 @@ struct SettingsView: View {
 							}
 							CatTitle(L("keyboard"))
 							CatList {
+								CatItem(L("text_input_mode")) {
+									SegmentPicker(selection: $settings.textInputMode, options: [
+										Choice(L("text_input_text"), TextInputMode.text),
+										Choice(L("text_input_keys"), TextInputMode.keys)
+									])
+									.frame(width: 165)
+								}
+								CatItem(L("text_paste_shortcut")) {
+									MultiPicker(selection: $settings.textPasteShortcut, options: [
+										Choice(L("paste_control_v"), TextPasteShortcut.controlV),
+										Choice(L("paste_command_v"), TextPasteShortcut.commandV)
+									])
+								}
 								CatItem(L("show_keyboard_button")) {
 									Toggle("", isOn: $settings.showKeyboardButton)
 										.frame(width: 80)
@@ -92,6 +105,12 @@ struct SettingsView: View {
 									Toggle("", isOn: $settings.optionAsCommand)
 										.frame(width: 80)
 								}
+								Text(L("text_input_help"))
+									.font(.system(size: 12))
+									.foregroundColor(.secondary)
+									.fixedSize(horizontal: false, vertical: true)
+									.padding(.horizontal)
+									.padding(.top, 4)
 							}
 							CatTitle(L("video"))
 							CatList {

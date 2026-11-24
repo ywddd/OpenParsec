@@ -133,6 +133,7 @@ class ParsecSDKBridge: ParsecService {
 	private let _audioPtr: UnsafeRawPointer
 
 	private var isVirtualShiftOn = false
+	private var toolbarModifierCodes: Set<UInt32> = []
 
 	public var clientWidth: Float = 1920
 	public var clientHeight: Float = 1080
@@ -148,6 +149,31 @@ class ParsecSDKBridge: ParsecService {
 	private var actualFrameDeliveryToken = 0
 	private var lastDeliveredActualFrameSize = StreamPixelSize(width: 0, height: 0)
 	static let adaptiveRequestTimeout: TimeInterval = 10
+
+	private enum QueuedTextInput {
+		case paste(String, TextPasteShortcut)
+		case key(String)
+
+		var byteCount: Int {
+			switch self {
+			case .paste(let text, _):
+				return text.utf8.count
+			case .key:
+				return 1
+			}
+		}
+	}
+
+	private let textInputLock = NSLock()
+	private var textInputGeneration = 0
+	private var textInputQueue: [QueuedTextInput] = []
+	private var textInputDraining = false
+	private var queuedTextBytes = 0
+	private var queuedTextActions = 0
+	private var textHeldKeyCodes: Set<UInt32> = []
+	private let maxQueuedTextBytes = RemoteInputPolicy.maxTextBytes
+	private let maxQueuedTextActions = 4096
+	private var resignObserver: NSObjectProtocol?
 
 	public var netProtocol: Int32 = 1
 	public var mediaContainer: Int32 = 0
@@ -212,9 +238,20 @@ class ParsecSDKBridge: ParsecService {
 			print("error: \(error)")
 		}
 
+		resignObserver = NotificationCenter.default.addObserver(
+			forName: UIApplication.willResignActiveNotification,
+			object: nil,
+			queue: .main
+		) { [weak self] _ in
+			self?.cancelPendingTextInput()
+		}
+
 	}
 
 	deinit {
+		if let resignObserver {
+			NotificationCenter.default.removeObserver(resignObserver)
+		}
 		ParsecDestroy(_parsec)
 		audio_destroy(&_audio)
 	}
@@ -500,6 +537,7 @@ class ParsecSDKBridge: ParsecService {
 
 	func disconnect() {
 
+		cancelPendingTextInput()
 		pollGeneration += 1
 		cancelAdaptiveRequestTimer()
 		resetActualFrameSize()
@@ -520,6 +558,7 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	func reconnect(_ peerID: String) -> ParsecStatus {
+		cancelPendingTextInput()
 		resetAdaptiveResolutionRequest()
 		sendReleaseMessage()
 		pollGeneration += 1
@@ -538,6 +577,7 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	func sendReleaseMessage() {
+		cancelPendingTextInput()
 		var msg = ParsecMessage()
 		msg.type = MESSAGE_RELEASE
 		ParsecClientSendMessage(_parsec, &msg)
@@ -966,31 +1006,239 @@ class ParsecSDKBridge: ParsecService {
 	}
 
 	func sendVirtualKeyboardInput(text: String) {
-		let (keyCode, useShift) = getKeyCodeByText(text: text)
+		switch RemoteInputPolicy.makeNamedKeyPlan(key: text, shortcut: SettingsHandler.textPasteShortcut) {
+		case .success(let plan):
+			enqueueTextPlan(plan)
+		case .failure:
+			postTextInputFailure("当前输入方式无法发送这段文字，请改用文字输入或检查主机剪贴板设置。")
+		}
+	}
 
-		guard let keyCode else {
+	func cancelPendingTextInput() {
+		guard Thread.isMainThread else {
+			DispatchQueue.main.async { [weak self] in self?.cancelPendingTextInput() }
 			return
 		}
-		var keyboardMessagePress = ParsecMessage()
-		keyboardMessagePress.type = MESSAGE_KEYBOARD
+		textInputLock.lock()
+		textInputGeneration += 1
+		textInputQueue.removeAll()
+		queuedTextBytes = 0
+		queuedTextActions = 0
+		textInputDraining = false
+		let heldKeys = textHeldKeyCodes
+		textHeldKeyCodes.removeAll()
+		let modifiers = toolbarModifierCodes
+		toolbarModifierCodes.removeAll()
+		textInputLock.unlock()
+
+		for code in heldKeys.union(modifiers) {
+			sendTextKey(code, pressed: false)
+		}
+		isVirtualShiftOn = false
+		ClipboardSync.shared.endTextTransaction()
+		notifyInputReleased()
+	}
+
+	private func postTextInputFailure(_ message: String) {
+		DispatchQueue.main.async {
+			NotificationCenter.default.post(
+				name: NSNotification.Name("RemoteTextInputFailure"),
+				object: nil,
+				userInfo: ["message": message]
+			)
+		}
+	}
+
+	private func enqueueTextPlan(_ plan: RemoteInputPlan) {
+		textInputLock.lock()
+		let generation = textInputGeneration
+		textInputLock.unlock()
+		DispatchQueue.main.async { [weak self] in
+			guard let self = self else { return }
+			let incomingBytes = plan.actions.reduce(0) { $0 + $1.byteCount }
+			let incomingActions = plan.actions.count
+			guard incomingActions > 0 else { return }
+			self.textInputLock.lock()
+			guard generation == self.textInputGeneration else {
+				self.textInputLock.unlock()
+				return
+			}
+			guard self.queuedTextBytes + incomingBytes <= self.maxQueuedTextBytes,
+				  self.queuedTextActions + incomingActions <= self.maxQueuedTextActions else {
+				self.textInputLock.unlock()
+				self.postTextInputFailure("待发送文字过多，请稍后重试。")
+				return
+			}
+			for action in plan.actions {
+				switch action {
+				case .pasteText(let text):
+					if let last = self.textInputQueue.last,
+					   case .paste(let previous, let shortcut) = last,
+					   shortcut == plan.shortcut,
+					   previous.utf8.count + text.utf8.count <= RemoteInputPolicy.maxChunkBytes {
+						self.textInputQueue[self.textInputQueue.count - 1] = .paste(previous + text, shortcut)
+						self.queuedTextActions -= 1
+					} else {
+						self.textInputQueue.append(.paste(text, plan.shortcut))
+					}
+				case .keyPress(let key):
+					self.textInputQueue.append(.key(key))
+				}
+			}
+			self.queuedTextBytes += incomingBytes
+			self.queuedTextActions += incomingActions
+			let shouldStart = self.textInputDraining == false
+			if shouldStart {
+				self.textInputDraining = true
+			}
+			self.textInputLock.unlock()
+			if shouldStart {
+				self.drainTextQueue(generation: generation)
+			}
+		}
+	}
+
+	private func drainTextQueue(generation: Int) {
+		textInputLock.lock()
+		guard generation == textInputGeneration else {
+			textInputLock.unlock()
+			return
+		}
+		guard textInputQueue.isEmpty == false else {
+			textInputDraining = false
+			queuedTextBytes = 0
+			queuedTextActions = 0
+			textInputLock.unlock()
+			ClipboardSync.shared.endTextTransaction()
+			return
+		}
+		let action = textInputQueue.removeFirst()
+		queuedTextBytes -= action.byteCount
+		queuedTextActions -= 1
+		textInputLock.unlock()
+		sendQueuedTextAction(action, generation: generation)
+	}
+
+	private func sendQueuedTextAction(_ action: QueuedTextInput, generation: Int) {
+		guard generation == textInputGeneration else { return }
+		guard UIApplication.shared.applicationState == .active,
+			  ParsecBackgroundManager.shared.hasActiveConnection,
+			  getStatus() == PARSEC_OK else {
+			cancelPendingTextInput()
+			return
+		}
+		switch action {
+		case .paste(let text, let shortcut):
+			guard let data = text.data(using: .utf8), data.isEmpty == false else {
+				drainTextQueue(generation: generation)
+				return
+			}
+			resetTextInputModifiers()
+			ClipboardSync.shared.beginTextTransaction()
+			var nullTerminated = data
+			nullTerminated.append(0)
+			let status: ParsecStatus = nullTerminated.withUnsafeBytes { buffer in
+				guard let base = buffer.baseAddress?.assumingMemoryBound(to: CChar.self) else {
+					return PARSEC_NOT_RUNNING
+				}
+				return ParsecClientSendUserData(_parsec, ParsecUserDataType.clipboard.rawValue, base)
+			}
+			guard status == PARSEC_OK else {
+				cancelPendingTextInput()
+				postTextInputFailure("文字发送失败，主机未确认接收；请重试或改用按键输入。")
+				return
+			}
+			ClipboardSync.shared.expectTextEcho(text)
+			let chord = RemoteInputPolicy.pasteChord(for: shortcut)
+			DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+				guard let self = self else { return }
+				guard generation == self.textInputGeneration else { return }
+				guard self.getStatus() == PARSEC_OK else {
+					self.cancelPendingTextInput()
+					return
+				}
+				self.sendTextKey(chord.modifierKeyCode, pressed: true)
+				self.sendTextKey(chord.keyCode, pressed: true)
+				self.sendTextKey(chord.keyCode, pressed: false)
+				self.sendTextKey(chord.modifierKeyCode, pressed: false)
+				DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+					self?.drainTextQueue(generation: generation)
+				}
+			}
+		case .key(let key):
+			guard enqueueNamedKey(key, generation: generation) else { return }
+		}
+	}
+
+	private func sendTextKey(_ code: UInt32, pressed: Bool) {
+		textInputLock.lock()
+		if pressed {
+			textHeldKeyCodes.insert(code)
+		} else {
+			textHeldKeyCodes.remove(code)
+		}
+		textInputLock.unlock()
+		var message = ParsecMessage()
+		message.type = MESSAGE_KEYBOARD
+		message.keyboard = ParsecKeyboardMessage(code: ParsecKeycode(code), mod: MOD_NONE, pressed: pressed, __pad: (0, 0, 0))
+		_ = ParsecClientSendMessage(_parsec, &message)
+	}
+
+	@discardableResult
+	private func enqueueNamedKey(_ key: String, generation: Int) -> Bool {
+		let (keyCode, useShift) = getKeyCodeByText(text: key)
+		guard let keyCode else {
+			cancelPendingTextInput()
+			postTextInputFailure(L("remote_text_unsupported"))
+			return false
+		}
 		let sendShift = !isVirtualShiftOn && useShift
 		if sendShift {
-			keyboardMessagePress.keyboard = ParsecKeyboardMessage(code: KEY_LSHIFT, mod: MOD_NONE, pressed: true, __pad: (0, 0, 0))
-			ParsecClientSendMessage(_parsec, &keyboardMessagePress)
+			sendTextKey(KEY_LSHIFT.rawValue, pressed: true)
 		}
-		keyboardMessagePress.keyboard = ParsecKeyboardMessage(code: keyCode, mod: MOD_NONE, pressed: true, __pad: (0, 0, 0))
-		ParsecClientSendMessage(_parsec, &keyboardMessagePress)
-
-		// add release delay in case some games ignore instant key release
-		DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
-			var release = ParsecMessage()
-			release.type = MESSAGE_KEYBOARD
-			release.keyboard = ParsecKeyboardMessage(code: keyCode, mod: MOD_NONE, pressed: false, __pad: (0, 0, 0))
-			ParsecClientSendMessage(self._parsec, &release)
+		sendTextKey(keyCode.rawValue, pressed: true)
+		DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
+			guard let self = self, generation == self.textInputGeneration else { return }
+			self.sendTextKey(keyCode.rawValue, pressed: false)
 			if sendShift {
-				release.keyboard = ParsecKeyboardMessage(code: KEY_LSHIFT, mod: MOD_NONE, pressed: false, __pad: (0, 0, 0))
-				ParsecClientSendMessage(self._parsec, &release)
+				self.sendTextKey(KEY_LSHIFT.rawValue, pressed: false)
 			}
+			DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak self] in
+				self?.drainTextQueue(generation: generation)
+			}
+		}
+		return true
+	}
+
+	func sendTextInput(text: String) {
+		guard text.isEmpty == false else { return }
+		let mode = SettingsHandler.textInputMode
+		let shortcut = SettingsHandler.textPasteShortcut
+		switch RemoteInputPolicy.makePlan(text: text, mode: mode, shortcut: shortcut) {
+		case .success(let plan):
+			enqueueTextPlan(plan)
+		case .failure(.unsupportedUnicode):
+			postTextInputFailure(L("remote_text_unsupported"))
+		case .failure(.tooLong):
+			postTextInputFailure("文字过长或单个字符超出发送上限，已取消发送。")
+		}
+	}
+
+	func resetTextInputModifiers() {
+		textInputLock.lock()
+		let modifiers = toolbarModifierCodes
+		toolbarModifierCodes.removeAll()
+		isVirtualShiftOn = false
+		textInputLock.unlock()
+		for code in modifiers {
+			sendTextKey(code, pressed: false)
+		}
+		notifyInputReleased()
+	}
+
+	private func notifyInputReleased() {
+		DispatchQueue.main.async {
+			NotificationCenter.default.post(name: NSNotification.Name("ParsecInputReleased"), object: nil)
 		}
 	}
 
@@ -1004,6 +1252,18 @@ class ParsecSDKBridge: ParsecService {
 		if keyCode.rawValue == 225 {
 			isVirtualShiftOn = isOn
 		}
+		textInputLock.lock()
+		if keyCode.rawValue == 225 {
+			isVirtualShiftOn = isOn
+		}
+		if [224, 225, 226, 227, 228, 229, 230, 231].contains(keyCode.rawValue) {
+			if isOn {
+				toolbarModifierCodes.insert(keyCode.rawValue)
+			} else {
+				toolbarModifierCodes.remove(keyCode.rawValue)
+			}
+		}
+		textInputLock.unlock()
 
 		var keyboardMessagePress = ParsecMessage()
 		keyboardMessagePress.type = MESSAGE_KEYBOARD

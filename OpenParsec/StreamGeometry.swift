@@ -33,6 +33,96 @@ struct AdaptiveHostResolution: Equatable {
 	}
 }
 
+enum StreamTwoFingerIntent: Equatable {
+	case undecided
+	case zoom
+	case pan
+	case scroll
+}
+
+struct StreamTwoFingerSample: Equatable {
+	let distance: CGFloat
+	let midpoint: CGPoint
+}
+
+enum StreamViewportMath {
+	static func classifyTwoFinger(
+		start: StreamTwoFingerSample,
+		current: StreamTwoFingerSample,
+		zoomEnabled: Bool,
+		isZoomed: Bool,
+		deadZone: CGFloat = 12
+	) -> StreamTwoFingerIntent {
+		let distanceDelta = abs(current.distance - start.distance)
+		let midpointDelta = hypot(current.midpoint.x - start.midpoint.x,
+								  current.midpoint.y - start.midpoint.y)
+		guard max(distanceDelta, midpointDelta) > max(0, deadZone) else { return .undecided }
+		if zoomEnabled, distanceDelta > midpointDelta { return .zoom }
+		if isZoomed { return .pan }
+		return .scroll
+	}
+
+	static func contentAnchor(at point: CGPoint, zoomScale: CGFloat, contentOffset: CGPoint) -> CGPoint {
+		guard zoomScale > 0 else { return .zero }
+		return CGPoint(x: (point.x + contentOffset.x) / zoomScale,
+					   y: (point.y + contentOffset.y) / zoomScale)
+	}
+
+	static func contentOffset(
+		anchoring contentAnchor: CGPoint,
+		at point: CGPoint,
+		zoomScale: CGFloat,
+		contentSize: CGSize,
+		viewportSize: CGSize,
+		minimumY: CGFloat = 0,
+		additionalBottomInset: CGFloat = 0
+	) -> CGPoint {
+		let proposed = CGPoint(x: contentAnchor.x * zoomScale - point.x,
+							   y: contentAnchor.y * zoomScale - point.y)
+		return clampedOffset(proposed,
+							 contentSize: contentSize,
+							 viewportSize: viewportSize,
+							 zoomScale: zoomScale,
+							 minimumY: minimumY,
+							 additionalBottomInset: additionalBottomInset)
+	}
+
+	static func clampedOffset(
+		_ proposed: CGPoint,
+		contentSize: CGSize,
+		viewportSize: CGSize,
+		zoomScale: CGFloat,
+		minimumY: CGFloat = 0,
+		additionalBottomInset: CGFloat = 0
+	) -> CGPoint {
+		let scale = max(0, zoomScale)
+		let maxX = max(0, contentSize.width * scale - viewportSize.width)
+		let maxY = max(minimumY,
+					   contentSize.height * scale - viewportSize.height + max(0, additionalBottomInset))
+		return CGPoint(x: min(max(0, proposed.x), maxX),
+					   y: min(max(minimumY, proposed.y), maxY))
+	}
+
+	static func pannedOffset(
+		from startOffset: CGPoint,
+		translation: CGPoint,
+		contentSize: CGSize,
+		viewportSize: CGSize,
+		zoomScale: CGFloat,
+		minimumY: CGFloat = 0,
+		additionalBottomInset: CGFloat = 0
+	) -> CGPoint {
+		clampedOffset(CGPoint(x: startOffset.x - translation.x,
+							  y: startOffset.y - translation.y),
+					  contentSize: contentSize,
+					  viewportSize: viewportSize,
+					  zoomScale: zoomScale,
+					  minimumY: minimumY,
+					  additionalBottomInset: additionalBottomInset)
+	}
+
+}
+
 struct StreamGeometry {
 	let viewportSize: CGSize
 	let hostSize: CGSize

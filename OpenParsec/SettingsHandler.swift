@@ -33,7 +33,9 @@ final class SettingsStore: ObservableObject {
 			"showConnectionLog": true,
 			"autoConnectOnLaunch": false,
 			"savedZoomEnabled": false,
-			"savedConstantFps": false
+			"savedConstantFps": false,
+			"textInputMode": TextInputMode.text.rawValue,
+			"textPasteShortcut": TextPasteShortcut.controlV.rawValue
 		])
 		// values saved back when saving was off would now always apply
 		if defaults.object(forKey: "saveSessionSettings") as? Bool == false {
@@ -76,6 +78,16 @@ final class SettingsStore: ObservableObject {
 	var cursorMode: CursorMode {
 		get { CursorMode(rawValue: defaults.integer(forKey: "cursorMode")) ?? .touchpad }
 		set { store(newValue.rawValue, "cursorMode") }
+	}
+
+	var textInputMode: TextInputMode {
+		get { TextInputMode(rawValue: defaults.integer(forKey: "textInputMode")) ?? .text }
+		set { store(newValue.rawValue, "textInputMode") }
+	}
+
+	var textPasteShortcut: TextPasteShortcut {
+		get { TextPasteShortcut(rawValue: defaults.integer(forKey: "textPasteShortcut")) ?? .controlV }
+		set { store(newValue.rawValue, "textPasteShortcut") }
 	}
 
 	var cursorScale: Double {
@@ -191,6 +203,8 @@ struct SettingsHandler {
 	static var bitrate: Int { get { SettingsStore.shared.bitrate } set { SettingsStore.shared.bitrate = newValue } }
 	static var decoder: DecoderPref { get { SettingsStore.shared.decoder } set { SettingsStore.shared.decoder = newValue } }
 	static var cursorMode: CursorMode { get { SettingsStore.shared.cursorMode } set { SettingsStore.shared.cursorMode = newValue } }
+	static var textInputMode: TextInputMode { get { SettingsStore.shared.textInputMode } set { SettingsStore.shared.textInputMode = newValue } }
+	static var textPasteShortcut: TextPasteShortcut { get { SettingsStore.shared.textPasteShortcut } set { SettingsStore.shared.textPasteShortcut = newValue } }
 	static var cursorScale: Double { get { SettingsStore.shared.cursorScale } set { SettingsStore.shared.cursorScale = newValue } }
 	static var mouseSensitivity: Double { get { SettingsStore.shared.mouseSensitivity } set { SettingsStore.shared.mouseSensitivity = newValue } }
 	static var optionAsCommand: Bool { get { SettingsStore.shared.optionAsCommand } set { SettingsStore.shared.optionAsCommand = newValue } }
