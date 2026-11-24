@@ -655,7 +655,7 @@ class ParsecSDKBridge: ParsecService {
 				guard frame.pointee.isWholeNV12 else { return }
 				holder.bridge.captureFrameSize(frame.pointee, generation: holder.generation)
 				if holder.generation == holder.bridge.pollGeneration {
-					holder.callback(frame, image, holder.opaque)
+					holder.callback(frame, image, UnsafeMutableRawPointer(mutating: holder.opaque))
 				}
 			}, timeout, Unmanaged.passUnretained(holder).toOpaque())
 		}
