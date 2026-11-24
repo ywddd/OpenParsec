@@ -163,6 +163,7 @@ jobs:
           precondition(textPlan("你好\r\nworld\t!").actions == [.pasteText("你好"), .keyPress("ENTER"), .pasteText("world"), .keyPress("TAB"), .pasteText("!")], "text and special key order preserved")
           precondition(textPlan("abc123", mode: .keys).actions == [.keyPress("a"), .keyPress("b"), .keyPress("c"), .keyPress("1"), .keyPress("2"), .keyPress("3")], "multi-character key input isn't dropped")
           precondition(textPlan("ENTER", mode: .keys).actions == [.keyPress("E"), .keyPress("N"), .keyPress("T"), .keyPress("E"), .keyPress("R")], "committed ASCII never interpreted as a shortcut name")
+          precondition(textPlan("你好\nA").actions.reduce(0) { $0 + $1.byteCount } == 8, "production queue byte accounting matches Unicode and keys")
           precondition(RemoteInputPolicy.keyNames(for: "\r\n") == ["ENTER"], "CRLF is one return")
           precondition(RemoteInputPolicy.makePlan(text: "中文", mode: .keys, shortcut: .controlV) == .failure(.unsupportedUnicode), "unsupported Unicode key input explicit")
           precondition(RemoteInputPolicy.makePlan(text: "a\0b", mode: .text, shortcut: .controlV) == .failure(.unsupportedUnicode), "NUL cannot truncate remote text")

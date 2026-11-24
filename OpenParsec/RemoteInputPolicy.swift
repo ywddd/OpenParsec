@@ -23,6 +23,13 @@ struct RemotePasteChord: Equatable {
 enum RemoteInputAction: Equatable {
 	case pasteText(String)
 	case keyPress(String)
+
+	var byteCount: Int {
+		switch self {
+		case .pasteText(let text): return text.utf8.count
+		case .keyPress: return 1
+		}
+	}
 }
 
 struct RemoteInputPlan: Equatable {
