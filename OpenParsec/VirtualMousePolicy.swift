@@ -282,7 +282,7 @@ enum VirtualMouseGeometry {
 		let buttonBottom = bodyFrame.minY + bodyFrame.height * 0.50
 		let collapse = CGRect(
 			x: bodyFrame.midX - minimumCollapseHitSize / 2,
-			y: bodyFrame.minY + bodyFrame.height * 0.88,
+			y: bodyFrame.maxY - minimumCollapseHitSize,
 			width: minimumCollapseHitSize,
 			height: minimumCollapseHitSize
 		)
@@ -305,11 +305,12 @@ enum VirtualMouseGeometry {
 			height: max(minimumWheelHeight, min(84, 78 * scale))
 		)
 		let moveY = max(bodyFrame.minY + bodyFrame.height * 0.56, wheel.maxY + gap)
+		let moveBottom = min(bodyFrame.maxY - padding, collapse.minY - gap)
 		let move = CGRect(
 			x: bodyFrame.minX + padding,
 			y: moveY,
 			width: max(0, bodyFrame.width - padding * 2),
-			height: max(0, min(bodyFrame.maxY - padding, collapse.minY - padding) - moveY)
+			height: max(0, moveBottom - moveY)
 		)
 		return VirtualMouseLayout(
 			bodyFrame: bodyFrame,
