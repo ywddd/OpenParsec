@@ -231,9 +231,9 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		scrollView.zoomScale = 1.0
 		let geometry = StreamGeometry(viewportSize: viewport, hostSize: hostSize, mode: displayMode)
 		glkView.updateSize(width: geometry.contentSize.width, height: geometry.contentSize.height)
-		contentView.frame = geometry.contentRect
+		contentView.frame = CGRect(origin: .zero, size: geometry.contentSize)
 		scrollView.contentSize = geometry.contentSize
-		scrollView.contentOffset = .zero
+		scrollView.contentOffset = CGPoint(x: max(0, -geometry.contentOffset.x), y: max(0, -geometry.contentOffset.y))
 		let hostPoint = StreamGeometry(viewportSize: viewport, hostSize: hostSize, mode: displayMode)
 			.hostPoint(forScreenPoint: CGPoint(x: CGFloat(CParsec.mouseInfo.mouseX), y: CGFloat(CParsec.mouseInfo.mouseY)))
 		let screenPoint = geometry.screenPoint(forHostPoint: hostPoint)
@@ -425,9 +425,9 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		}
 		let geometry = StreamGeometry(viewportSize: CGSize(width: width, height: height), hostSize: hostSize, mode: displayMode)
 		glkView.updateSize(width: geometry.contentSize.width, height: geometry.contentSize.height)
-		contentView.frame = geometry.contentRect
+		contentView.frame = CGRect(origin: .zero, size: geometry.contentSize)
 		scrollView.contentSize = geometry.contentSize
-		scrollView.contentOffset = .zero
+		scrollView.contentOffset = CGPoint(x: max(0, -geometry.contentOffset.x), y: max(0, -geometry.contentOffset.y))
 	}
 
 	override func viewDidAppear(_ animated: Bool) {
@@ -1119,8 +1119,8 @@ extension ParsecViewController: UIGestureRecognizerDelegate {
 	}
 
 	private func clampToContent(_ p: CGPoint) -> CGPoint {
-		let w = view.bounds.width
-		let h = view.bounds.height
+		let w = scrollView.contentSize.width
+		let h = scrollView.contentSize.height
 		return CGPoint(x: min(max(0, p.x), w), y: min(max(0, p.y), h))
 	}
 
@@ -1130,8 +1130,8 @@ extension ParsecViewController: UIGestureRecognizerDelegate {
 		guard let u = u else { return }
 		let zoom = scrollView.zoomScale
 		let off = scrollView.contentOffset
-		let screenX = cursorContentPos.x * zoom - off.x
-		let screenY = cursorContentPos.y * zoom - off.y
+		let screenX = cursorContentPos.x - off.x / zoom
+		let screenY = cursorContentPos.y - off.y / zoom
 		let cs = CGFloat(SettingsHandler.cursorScale)
 		let hotX = CGFloat(CParsec.mouseInfo.cursorHotX) * cs
 		let hotY = CGFloat(CParsec.mouseInfo.cursorHotY) * cs

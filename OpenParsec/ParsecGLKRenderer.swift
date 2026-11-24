@@ -61,11 +61,10 @@ class ParsecGLKRenderer: NSObject, GLKViewDelegate, GLKViewControllerDelegate {
 			hostSize: CGSize(width: CGFloat(CParsec.hostWidth), height: CGFloat(CParsec.hostHeight)),
 			mode: displayMode
 		)
-		let rect = geometry.contentRect
-		viewportContext.x = Int(rect.minX.rounded())
-		viewportContext.y = Int(rect.minY.rounded())
-		viewportContext.width = Int(rect.width.rounded())
-		viewportContext.height = Int(rect.height.rounded())
+		viewportContext.x = 0
+		viewportContext.y = 0
+		viewportContext.width = Int(geometry.contentSize.width.rounded())
+		viewportContext.height = Int(geometry.contentSize.height.rounded())
 		CParsec.renderGLFrame(timeout: timeout, preRender: glPreRenderCallback, opaque: Unmanaged.passUnretained(viewportContext).toOpaque())
 
 		drawnFrames += 1

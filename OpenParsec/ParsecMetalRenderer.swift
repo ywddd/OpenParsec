@@ -114,15 +114,7 @@ class ParsecMetalRenderer: NSObject, MTKViewDelegate {
 
 	func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) { }
 
-	private func syncClientFrame(_ view: MTKView) {
-		guard abs(view.frame.size.width - lastWidth) > 0.1 || abs(view.contentScaleFactor - lastScale) > 0.01 else { return }
-		CParsec.setFrame(view.frame.size.width, view.frame.size.height, view.contentScaleFactor / UIScreen.main.scale)
-		lastWidth = view.frame.size.width
-		lastScale = view.contentScaleFactor
-	}
-
 	func draw(in view: MTKView) {
-		syncClientFrame(view)
 		let size = CGSize(width: (view.bounds.width * view.contentScaleFactor).rounded(), height: (view.bounds.height * view.contentScaleFactor).rounded())
 		if view.drawableSize != size {
 			view.drawableSize = size
@@ -152,8 +144,7 @@ class ParsecMetalRenderer: NSObject, MTKViewDelegate {
 		}
 		if current >= 0, let p = planes[current] {
 			let geometry = StreamGeometry(viewportSize: view.drawableSize, hostSize: frameSize, mode: displayMode)
-			let rect = geometry.contentRect
-			enc.setViewport(MTLViewport(originX: Double(rect.minX), originY: Double(rect.minY), width: Double(rect.width), height: Double(rect.height), znear: 0, zfar: 1))
+			enc.setViewport(MTLViewport(originX: 0, originY: 0, width: Double(geometry.contentSize.width), height: Double(geometry.contentSize.height), znear: 0, zfar: 1))
 			enc.setRenderPipelineState(pipeline)
 			enc.setFragmentTexture(p.y, index: 0)
 			enc.setFragmentTexture(p.c, index: 1)
