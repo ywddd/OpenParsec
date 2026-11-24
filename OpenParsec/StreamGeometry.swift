@@ -21,11 +21,11 @@ struct AdaptiveHostResolution: Equatable {
 		let maxHeight = even(min(1080, screenHeight))
 		guard maxWidth >= 640, maxHeight >= 360 else { return nil }
 
-		let widthAtHeightLimit = even((maxHeight * screenWidth) / screenHeight)
+		let widthAtHeightLimit = even(Double(maxHeight) * Double(screenWidth) / Double(screenHeight))
 		if widthAtHeightLimit > 0 && widthAtHeightLimit <= maxWidth {
 			return AdaptiveHostResolution(width: widthAtHeightLimit, height: maxHeight)
 		}
-		let heightAtWidthLimit = even((maxWidth * screenHeight) / screenWidth)
+		let heightAtWidthLimit = even(Double(maxWidth) * Double(screenHeight) / Double(screenWidth))
 		guard heightAtWidthLimit > 0 else { return nil }
 		return AdaptiveHostResolution(width: maxWidth, height: heightAtWidthLimit)
 	}
@@ -39,8 +39,9 @@ struct AdaptiveHostResolution: Equatable {
 		return window?.bounds.size ?? UIScreen.main.bounds.size
 	}
 
-	private static func even(_ value: Int) -> Int {
-		max(0, value - value % 2)
+	private static func even(_ value: Double) -> Int {
+		let rounded = Int(value.rounded())
+		return max(0, rounded - rounded % 2)
 	}
 }
 
