@@ -398,8 +398,10 @@ enum VirtualMouseGeometry {
 						  remainder: CGFloat) -> (units: Int32, remainder: CGFloat) {
 		let effectiveSensitivity = sensitivity.isFinite ? max(0, sensitivity) : 1.5
 		let accumulated = remainder + delta * effectiveSensitivity * 2.3
-		let units = Int32(accumulated)
-		return (units, accumulated - CGFloat(units))
+		let nearestInteger = accumulated.rounded()
+		let normalized = abs(accumulated - nearestInteger) <= 1e-9 ? nearestInteger : accumulated
+		let units = Int32(normalized)
+		return (units, normalized - CGFloat(units))
 	}
 
 	static func movedPosition(for bodyFrame: CGRect, by delta: CGPoint,
