@@ -151,10 +151,11 @@ final class VirtualMouseOverlay: UIView {
 					onScroll?(units)
 				}
 			case .reposition:
+				let bodySize = presentation?.bodyFrame.size ?? .zero
 				let next = CGPoint(x: configuration.normalizedPosition.x
-								  + delta.x / max(1, usableRect.width - safeInsets.left - safeInsets.right),
+								  + delta.x / max(1, usableRect.width - safeInsets.left - safeInsets.right - bodySize.width),
 								   y: configuration.normalizedPosition.y
-								  + delta.y / max(1, usableRect.height - safeInsets.top - safeInsets.bottom))
+								  + delta.y / max(1, usableRect.height - safeInsets.top - safeInsets.bottom - bodySize.height))
 				configuration.normalizedPosition =
 					VirtualMouseGeometry.normalizedPosition(next)
 				onPositionChanged?(configuration.normalizedPosition)

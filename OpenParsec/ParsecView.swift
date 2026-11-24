@@ -706,16 +706,9 @@ struct ParsecView: View {
 		parsecViewController.setVirtualMouseSuspended(!SettingsHandler.virtualMouseEnabled || viewOnly || hideOverlay)
 		offerHint()
 
-		let overlayHidden = $hideOverlay
-		let keyboardButtonHidden = $hideKeyboardButton
-		let menuShown = $showMenu
 		parsecViewController.onMenuEdgeSwipe = {
-			overlayHidden.wrappedValue = false
-			keyboardButtonHidden.wrappedValue = !SettingsHandler.showKeyboardButton
-			menuShown.wrappedValue = true
-			parsecViewController.releaseMobileInteractions()
-			parsecViewController.setVirtualMouseSuspended(true)
-			ParsecView.getHostUserData()
+			restoreOverlay()
+			setPanelOpen(true)
 		}
 
         let keyboardShown = $showKeyboard
@@ -767,10 +760,10 @@ struct ParsecView: View {
 		parsecViewController.updatePanHandle()
 		parsecViewController.positionCursorOverlay()
 		parsecViewController.applyVirtualMouseSettings()
+		hideOverlay = SettingsHandler.noOverlay
 		parsecViewController.setVirtualMouseSuspended(viewOnly
 			|| !SettingsHandler.virtualMouseEnabled
 			|| hideOverlay)
-		hideOverlay = SettingsHandler.noOverlay
 		hideKeyboardButton = !SettingsHandler.showKeyboardButton
 		parsecViewController.updateMenuEdgeSwipe(menuHidden: hideOverlay)
 		parsecViewController.setInteractionEnabled(!viewOnly)
@@ -809,6 +802,7 @@ struct ParsecView: View {
 	func reconnectTo(_ peerId: String) {
 		isReconnecting = true
 		ParsecBackgroundManager.shared.reconnectAttempts = 0
+		parsecViewController.releaseMobileInteractions()
 		parsecViewController.resetKeyState()
 		CParsec.reconnect(peerId)
 		ParsecBackgroundManager.shared.reconnectStartTime = Date()

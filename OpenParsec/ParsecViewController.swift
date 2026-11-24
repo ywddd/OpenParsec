@@ -79,7 +79,6 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	)
 	var virtualMouseSuspendedOverride = false
 	var interactionEnabled = true
-	var virtualMouseFallbackCursor = false
 	var isDragging = false
 	var twoFingerResidual = false       // leftover finger after a 2-finger gesture; inert until full lift
 	var activeTouches: [UITouch] = []   // ordered; first two drive pinch / scroll
@@ -226,7 +225,8 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 				}
 			}
 		} else {
-			u?.isHidden = !shouldShowVirtualMouseFallbackCursor
+			u?.isHidden = true
+			positionCursorOverlay()
 		}
 	}
 
@@ -470,13 +470,11 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 			name: UIApplication.didBecomeActiveNotification,
 			object: nil
 		)
-		NotificationCenter.default.addObserver(self, selector: #selector(appDidBecomeActive),
-			name: UIApplication.didBecomeActiveNotification, object: nil)
 
 	}
 
 	private func installVirtualMouseOverlay() {
-		let overlay = VirtualMouseOverlay(frame: .zero)
+		let overlay = VirtualMouseOverlay(frame: view.bounds)
 		overlay.onMove = { [weak self] delta in
 			self?.moveVirtualMouse(by: delta)
 		}
@@ -590,7 +588,6 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		} else {
 			CParsec.sendMousePosition(viewportPoint: cursorContentPos)
 		}
-		virtualMouseFallbackCursor = true
 		positionCursorOverlay()
 		centerVirtualMouseViewportIfNeeded()
 	}
@@ -1670,6 +1667,7 @@ extension ParsecViewController: UIGestureRecognizerDelegate {
 			u.isHidden = true
 			return
 		}
+		u.isHidden = CParsec.mouseInfo.cursorHidden || CParsec.mouseInfo.cursorImg == nil
 		let cs = CGFloat(SettingsHandler.cursorScale)
 		let hotX = CGFloat(CParsec.mouseInfo.cursorHotX) * cs
 		let hotY = CGFloat(CParsec.mouseInfo.cursorHotY) * cs
@@ -2074,6 +2072,7 @@ extension ParsecViewController: UIKeyInput, UITextInputTraits {
 	}
 
 	@objc private func inputWasReleased() {
+		virtualMouseOverlay?.releaseAll()
 		clearToolbarModifiers(sendToHost: false)
 	}
 
