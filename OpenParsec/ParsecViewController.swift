@@ -93,6 +93,7 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 	var displayMode: StreamDisplayMode = SettingsHandler.streamDisplayMode {
 		didSet { applyDisplayMode() }
 	}
+	var visibleContentRect: CGRect = .zero
 	var lastLaidOutWidth: CGFloat = 0
 	var lastLaidOutHeight: CGFloat = 0
 
@@ -233,12 +234,9 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		glkView.updateSize(width: geometry.contentSize.width, height: geometry.contentSize.height)
 		contentView.frame = CGRect(origin: .zero, size: geometry.contentSize)
 		scrollView.contentSize = geometry.contentSize
-		scrollView.contentOffset = CGPoint(x: max(0, -geometry.contentOffset.x), y: max(0, -geometry.contentOffset.y))
-		let hostPoint = StreamGeometry(viewportSize: viewport, hostSize: hostSize, mode: displayMode)
-			.hostPoint(forScreenPoint: CGPoint(x: CGFloat(CParsec.mouseInfo.mouseX), y: CGFloat(CParsec.mouseInfo.mouseY)))
-		let screenPoint = geometry.screenPoint(forHostPoint: hostPoint)
-		CParsec.sendMousePosition(Int32(screenPoint.x.rounded()), Int32(screenPoint.y.rounded()))
-		CParsec.setFrame(viewport.width, viewport.height, UIScreen.main.scale)
+		scrollView.contentOffset = geometry.scrollOffset
+		visibleContentRect = CGRect(origin: geometry.scrollOffset, size: viewport)
+		CParsec.setFrame(geometry.contentSize.width, geometry.contentSize.height, UIScreen.main.scale)
 		positionCursorOverlay()
 	}
 
@@ -390,7 +388,6 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 
 		self.glkView.updateSize(width: w, height: h)
 		applyStreamLayout(width: w, height: h)
-		CParsec.setFrame(w, h, UIScreen.main.scale)
 
         // Reset accessory view to ensure correct width in new orientation
         clearToolbarModifiers(sendToHost: true)
@@ -413,7 +410,6 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		lastLaidOutHeight = h
 		glkView.updateSize(width: w, height: h)
 		applyStreamLayout(width: w, height: h)
-		CParsec.setFrame(w, h, UIScreen.main.scale)
 	}
 
 	private func applyStreamLayout(width: CGFloat, height: CGFloat) {
@@ -427,7 +423,8 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		glkView.updateSize(width: geometry.contentSize.width, height: geometry.contentSize.height)
 		contentView.frame = CGRect(origin: .zero, size: geometry.contentSize)
 		scrollView.contentSize = geometry.contentSize
-		scrollView.contentOffset = CGPoint(x: max(0, -geometry.contentOffset.x), y: max(0, -geometry.contentOffset.y))
+		scrollView.contentOffset = geometry.scrollOffset
+		visibleContentRect = CGRect(origin: geometry.scrollOffset, size: CGSize(width: width, height: height))
 	}
 
 	override func viewDidAppear(_ animated: Bool) {
@@ -1130,8 +1127,8 @@ extension ParsecViewController: UIGestureRecognizerDelegate {
 		guard let u = u else { return }
 		let zoom = scrollView.zoomScale
 		let off = scrollView.contentOffset
-		let screenX = cursorContentPos.x - off.x / zoom
-		let screenY = cursorContentPos.y - off.y / zoom
+		let screenX = cursorContentPos.x * zoom - off.x
+		let screenY = cursorContentPos.y * zoom - off.y
 		let cs = CGFloat(SettingsHandler.cursorScale)
 		let hotX = CGFloat(CParsec.mouseInfo.cursorHotX) * cs
 		let hotY = CGFloat(CParsec.mouseInfo.cursorHotY) * cs
