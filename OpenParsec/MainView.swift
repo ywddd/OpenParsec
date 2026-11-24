@@ -374,7 +374,7 @@ struct MainView: View {
 						return Alert(title: Text(L("connection_failed")), message: Text(baseAlertText),
 							primaryButton: .default(Text(L("open_app_settings")), action: {
 								if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-							}), secondaryButton: .cancel(Text("OK")))
+							}), secondaryButton: .cancel(Text(L("ok"))))
 					}
 					return Alert(title: Text(baseAlertText))
 				}
