@@ -91,22 +91,20 @@ struct VirtualMouseLayout: Equatable {
 	}
 
 	var isValid: Bool {
-		let primaryControls = [leftButtonFrame, rightButtonFrame, moveFrame]
-		guard primaryControls.allSatisfy({
+		guard [leftButtonFrame, rightButtonFrame].allSatisfy({
 			$0.width >= VirtualMouseGeometry.minimumButtonLength &&
 			$0.height >= VirtualMouseGeometry.minimumButtonLength
-		}) else { return false }
-		let controls = primaryControls + [wheelFrame, collapseButtonFrame]
+		}), moveFrame.width >= VirtualMouseGeometry.minimumButtonLength,
+			  moveFrame.height >= VirtualMouseGeometry.minimumPalmHeight else { return false }
+		let controls = [leftButtonFrame, rightButtonFrame, moveFrame, wheelFrame, collapseButtonFrame]
 		guard bodyFrame.width <= VirtualMouseGeometry.maximumBodyWidth + 0.5,
 			  bodyFrame.width >= VirtualMouseGeometry.minimumBodyWidth - 0.5,
-			  collapseButtonFrame.width >= VirtualMouseGeometry.minimumButtonLength,
-			  collapseButtonFrame.height >= VirtualMouseGeometry.minimumButtonLength,
+			  collapseButtonFrame.width >= VirtualMouseGeometry.minimumCollapseHitSize,
+			  collapseButtonFrame.height >= VirtualMouseGeometry.minimumCollapseHitSize,
 			  controls.allSatisfy({ bodyFrame.contains($0) }),
 			  wheelFrame.width >= VirtualMouseGeometry.minimumWheelWidth,
-			  wheelFrame.height >= VirtualMouseGeometry.minimumButtonLength,
+			  wheelFrame.height >= VirtualMouseGeometry.minimumWheelHeight,
 			  !leftButtonFrame.intersects(rightButtonFrame),
-			  !leftButtonFrame.intersects(wheelFrame),
-			  !rightButtonFrame.intersects(wheelFrame),
 			  repositionHandleFrame.isEmpty,
 			  middleButtonFrame.isEmpty,
 			  resizeHandleFrame.isEmpty else { return false }
@@ -217,7 +215,11 @@ enum VirtualMouseGeometry {
 	static let maximumBodyWidth: CGFloat = 160
 	static let collapsedSize: CGFloat = 46
 	static let minimumButtonLength: CGFloat = 44
-	static let minimumWheelWidth: CGFloat = 20
+	static let minimumPalmHeight: CGFloat = 44
+	static let minimumCollapseHitSize: CGFloat = 24
+	static let minimumWheelWidth: CGFloat = 44
+	static let minimumWheelHeight: CGFloat = 72
+	static let wheelTrackWidth: CGFloat = 12
 	static let padding: CGFloat = 4
 	static let gap: CGFloat = 4
 
@@ -274,21 +276,21 @@ enum VirtualMouseGeometry {
 	static func layout(bodyFrame: CGRect, scale: CGFloat) -> VirtualMouseLayout {
 		let padding = max(Self.padding, Self.padding * scale)
 		let gap = max(Self.gap, Self.gap * scale)
-		let wheelWidth = max(minimumWheelWidth, minimumWheelWidth * scale)
-		let buttonWidth = (bodyFrame.width - padding * 2 - gap * 2 - wheelWidth) / 2
-		let buttonBottom = bodyFrame.minY + bodyFrame.height * 0.6
-		let buttonTop = bodyFrame.minY + bodyFrame.height * 0.30
+		let buttonWidth = (bodyFrame.width - padding * 2 - wheelTrackWidth) / 2
+		let wheelHitWidth = max(minimumWheelWidth, min(52, 48 * scale))
+		let buttonTop = bodyFrame.minY + bodyFrame.height * 0.06
+		let buttonBottom = bodyFrame.minY + bodyFrame.height * 0.50
 		let collapse = CGRect(
-			x: bodyFrame.midX - minimumButtonLength / 2,
-			y: bodyFrame.minY,
-			width: minimumButtonLength,
-			height: minimumButtonLength
+			x: bodyFrame.midX - minimumCollapseHitSize / 2,
+			y: bodyFrame.minY + bodyFrame.height * 0.88,
+			width: minimumCollapseHitSize,
+			height: minimumCollapseHitSize
 		)
 		let left = CGRect(
 			x: bodyFrame.minX + padding,
 			y: buttonTop,
 			width: buttonWidth,
-			height: buttonBottom - buttonTop - padding
+			height: buttonBottom - buttonTop
 		)
 		let right = CGRect(
 			x: bodyFrame.maxX - padding - buttonWidth,
@@ -297,17 +299,17 @@ enum VirtualMouseGeometry {
 			height: left.height
 		)
 		let wheel = CGRect(
-			x: bodyFrame.midX - wheelWidth / 2,
-			y: bodyFrame.minY + max(padding, 48 * scale),
-			width: wheelWidth,
-			height: max(minimumButtonLength, 54 * scale)
+			x: bodyFrame.midX - wheelHitWidth / 2,
+			y: bodyFrame.minY + bodyFrame.height * 0.13,
+			width: wheelHitWidth,
+			height: max(minimumWheelHeight, min(84, 78 * scale))
 		)
-		let moveY = bodyFrame.minY + bodyFrame.height * 0.62
+		let moveY = max(bodyFrame.minY + bodyFrame.height * 0.56, wheel.maxY + gap)
 		let move = CGRect(
 			x: bodyFrame.minX + padding,
 			y: moveY,
 			width: max(0, bodyFrame.width - padding * 2),
-			height: max(0, bodyFrame.maxY - padding - moveY)
+			height: max(0, min(bodyFrame.maxY - padding, collapse.minY - padding) - moveY)
 		)
 		return VirtualMouseLayout(
 			bodyFrame: bodyFrame,
@@ -324,11 +326,10 @@ enum VirtualMouseGeometry {
 
 	static func interaction(at point: CGPoint, layout: VirtualMouseLayout) -> VirtualMouseInteraction? {
 		guard bodyPath(in: layout.bodyFrame).contains(point) else { return nil }
+		if layout.wheelFrame.contains(point) { return .wheel }
+		if layout.collapseButtonFrame.contains(point) { return .collapse }
 		if buttonPath(.left, layout: layout).contains(point) { return .button(.left) }
 		if buttonPath(.right, layout: layout).contains(point) { return .button(.right) }
-		if collapseGlyphFrame(layout: layout).contains(point) { return .collapse }
-		if layout.collapseButtonFrame.contains(point) { return .collapse }
-		if layout.wheelFrame.contains(point) { return .wheel }
 		return .move
 	}
 
@@ -347,11 +348,15 @@ enum VirtualMouseGeometry {
 					y: outline.minY + outline.height * vertical)
 		}
 		let path = CGMutablePath()
-		path.move(to: point(0.5, 0))
-		path.addCurve(to: point(0.025, 0.25), control1: point(0.25, 0), control2: point(0.025, 0.08))
-		path.addCurve(to: point(0.5, 1), control1: point(0.025, 0.62), control2: point(0.22, 1))
-		path.addCurve(to: point(0.975, 0.25), control1: point(0.78, 1), control2: point(0.975, 0.62))
-		path.addCurve(to: point(0.5, 0), control1: point(0.975, 0.08), control2: point(0.75, 0))
+		path.move(to: point(0.38, 0.02))
+		path.addCurve(to: point(0.62, 0.02), control1: point(0.45, -0.02), control2: point(0.55, -0.02))
+		path.addCurve(to: point(0.94, 0.20), control1: point(0.82, 0.02), control2: point(0.94, 0.08))
+		path.addCurve(to: point(0.88, 0.70), control1: point(0.96, 0.40), control2: point(0.98, 0.58))
+		path.addCurve(to: point(0.65, 0.98), control1: point(0.82, 0.90), control2: point(0.72, 1.0))
+		path.addCurve(to: point(0.35, 0.98), control1: point(0.50, 1.0), control2: point(0.28, 0.90))
+		path.addCurve(to: point(0.12, 0.70), control1: point(0.18, 0.98), control2: point(0.04, 0.58))
+		path.addCurve(to: point(0.06, 0.20), control1: point(0.02, 0.45), control2: point(0.06, 0.25))
+		path.addCurve(to: point(0.38, 0.02), control1: point(0.05, 0.08), control2: point(0.18, 0.02))
 		path.closeSubpath()
 		return path
 	}
@@ -360,13 +365,14 @@ enum VirtualMouseGeometry {
 		let path = CGMutablePath()
 		guard button != .middle else { return path }
 		let frame = button == .left ? layout.leftButtonFrame : layout.rightButtonFrame
-		let innerX = button == .left ? frame.maxX : frame.minX
 		let outerX = button == .left ? frame.minX : frame.maxX
-		path.move(to: CGPoint(x: innerX, y: frame.minY))
-		path.addLine(to: CGPoint(x: innerX, y: frame.maxY - 8))
+		let channelHalfWidth = wheelTrackWidth / 2
+		let channelX = layout.bodyFrame.midX + (button == .left ? -channelHalfWidth : channelHalfWidth)
+		path.move(to: CGPoint(x: channelX, y: frame.minY))
+		path.addLine(to: CGPoint(x: channelX, y: frame.maxY - 8))
 		path.addCurve(
 			to: CGPoint(x: outerX, y: frame.maxY - 14),
-			control1: CGPoint(x: innerX, y: frame.maxY + 2),
+			control1: CGPoint(x: channelX, y: frame.maxY + 2),
 			control2: CGPoint(x: outerX, y: frame.maxY - 4)
 		)
 		path.addLine(to: CGPoint(x: outerX, y: frame.minY))
@@ -375,12 +381,23 @@ enum VirtualMouseGeometry {
 	}
 
 	static func wheelTrackFrame(layout: VirtualMouseLayout) -> CGRect {
-		layout.wheelFrame.insetBy(dx: layout.wheelFrame.width * 0.2, dy: 4)
+		let height = min(36, layout.wheelFrame.height)
+		return CGRect(x: layout.bodyFrame.midX - wheelTrackWidth / 2,
+					  y: layout.wheelFrame.midY - height / 2,
+					  width: wheelTrackWidth, height: height)
 	}
 
 	static func collapseGlyphFrame(layout: VirtualMouseLayout) -> CGRect {
-		CGRect(x: layout.collapseButtonFrame.midX - 14, y: layout.collapseButtonFrame.midY - 14,
-			   width: 28, height: 28)
+		CGRect(x: layout.collapseButtonFrame.midX - 8, y: layout.collapseButtonFrame.midY - 8,
+			   width: 16, height: 16)
+	}
+
+	static func wheelUnits(for delta: CGFloat, sensitivity: CGFloat = 1.5,
+						  remainder: CGFloat) -> (units: Int32, remainder: CGFloat) {
+		let effectiveSensitivity = sensitivity.isFinite ? max(0, sensitivity) : 1.5
+		let accumulated = remainder + delta * effectiveSensitivity * 2.3
+		let units = Int32(accumulated)
+		return (units, accumulated - CGFloat(units))
 	}
 
 	static func movedPosition(for bodyFrame: CGRect, by delta: CGPoint,

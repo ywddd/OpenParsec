@@ -163,11 +163,16 @@ final class VirtualMouseOverlay: UIView {
 								y: point.y - state.lastPoint.y)
 			let dragDelta = state.drag.move(to: point)
 			state.lastPoint = point
+			var wheelUnits: Int32 = 0
 			if case .wheel = state.interaction {
-				state.wheelRemainder += delta.y / 8
+				let result = VirtualMouseGeometry.wheelUnits(
+					for: delta.y,
+					sensitivity: CGFloat(SettingsHandler.scrollSensitivity),
+					remainder: state.wheelRemainder
+				)
+				wheelUnits = result.units
+				state.wheelRemainder = result.remainder
 			}
-			let wheelUnits = Int32(state.wheelRemainder)
-			state.wheelRemainder -= CGFloat(wheelUnits)
 			activeTouches[touch] = state
 			switch state.interaction {
 			case .button:
@@ -275,6 +280,7 @@ final class VirtualMouseOverlay: UIView {
 		}
 		let wheel = accessibilityControl(label: "鼠标滚轮", frame: layout.wheelFrame)
 		wheel.accessibilityTraits = .adjustable
+		wheel.accessibilityHint = "按住中央滚轮上下滑动"
 		wheel.onIncrement = { [weak self] in self?.scrollAccessibly(1) }
 		wheel.onDecrement = { [weak self] in self?.scrollAccessibly(-1) }
 		let palm = accessibilityControl(label: "鼠标掌托", frame: layout.moveFrame)
@@ -371,14 +377,6 @@ private final class VirtualMouseBodyView: UIView {
 			path.stroke()
 		}
 		drawWheel(layout: layout, dark: dark)
-		let accent = UIBezierPath()
-		accent.move(to: CGPoint(x: bounds.midX - 11, y: bounds.maxY - 20))
-		accent.addQuadCurve(to: CGPoint(x: bounds.midX + 11, y: bounds.maxY - 20),
-							controlPoint: CGPoint(x: bounds.midX, y: bounds.maxY - 17))
-		UIColor(white: dark ? 1 : 0.2, alpha: 0.18).setStroke()
-		accent.lineWidth = 1
-		accent.lineCapStyle = .round
-		accent.stroke()
 		context.restoreGState()
 		let outline = UIBezierPath(cgPath: bodyPath)
 		UIColor(white: dark ? 1 : 0.25, alpha: dark ? 0.24 : 0.22).setStroke()
@@ -386,7 +384,7 @@ private final class VirtualMouseBodyView: UIView {
 		outline.stroke()
 		let closeFrame = collapseGlyphFrame(layout: layout)
 		let close = UIBezierPath(ovalIn: closeFrame)
-		UIColor(white: dark ? 0.12 : 0.97, alpha: 0.96).setFill()
+		UIColor(white: dark ? 0.12 : 0.97, alpha: 0.82).setFill()
 		close.fill()
 		UIColor(white: dark ? 1 : 0.2, alpha: 0.2).setStroke()
 		close.lineWidth = 0.8

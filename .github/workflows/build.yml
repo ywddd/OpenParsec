@@ -217,16 +217,64 @@ jobs:
                   let layout = presentation.localizedToBody.layout!
                   precondition(layout.isValid && layout.isContainedInBody, "controls have safe hit regions")
                   precondition(layout.bodyFrame.origin == .zero, "drawing and hit testing use local origin")
+                  near(layout.bodyFrame.width, 136 * scale, "requested size stays expanded")
+                  precondition(layout.leftButtonFrame.width >= 44 && layout.leftButtonFrame.height >= 44 && layout.rightButtonFrame.width >= 44 && layout.rightButtonFrame.height >= 44, "both primary buttons remain usable")
                   precondition(VirtualMouseGeometry.interaction(at: CGPoint(x: layout.leftButtonFrame.midX, y: layout.leftButtonFrame.midY), layout: layout) == .button(.left), "local left hit")
                   precondition(VirtualMouseGeometry.interaction(at: CGPoint(x: layout.rightButtonFrame.midX, y: layout.rightButtonFrame.midY), layout: layout) == .button(.right), "local right hit")
                   precondition(VirtualMouseGeometry.interaction(at: CGPoint(x: layout.wheelFrame.midX, y: layout.wheelFrame.midY), layout: layout) == .wheel, "compact wheel hit")
+                  precondition(layout.wheelFrame.width >= 44 && layout.wheelFrame.width <= 52, "wheel hit lane width")
+                  precondition(layout.wheelFrame.height >= 72 && layout.wheelFrame.height <= 84, "wheel hit lane height")
+                  precondition(layout.leftButtonFrame.minY / layout.bodyFrame.height >= 0.05 && layout.leftButtonFrame.minY / layout.bodyFrame.height <= 0.07, "left paddle starts at mouse head")
+                  precondition(layout.leftButtonFrame.maxY / layout.bodyFrame.height >= 0.49 && layout.leftButtonFrame.maxY / layout.bodyFrame.height <= 0.51, "left paddle ends above palm")
+                  precondition(layout.rightButtonFrame.minY == layout.leftButtonFrame.minY && layout.rightButtonFrame.maxY == layout.leftButtonFrame.maxY, "paired paddles align")
+                  let wheelOverlapProbe = CGPoint(x: layout.wheelFrame.minX + 1, y: layout.leftButtonFrame.midY)
+                  precondition(layout.leftButtonFrame.contains(wheelOverlapProbe), "wheel lane can overlay button frame")
+                  precondition(VirtualMouseGeometry.buttonPath(.left, layout: layout).contains(wheelOverlapProbe), "wheel lane overlaps visible left paddle")
+                  precondition(VirtualMouseGeometry.interaction(at: wheelOverlapProbe, layout: layout) == .wheel, "wheel hit priority wins central lane")
+                  let rightOverlapProbe = CGPoint(x: layout.wheelFrame.maxX - 1, y: layout.rightButtonFrame.midY)
+                  precondition(VirtualMouseGeometry.buttonPath(.right, layout: layout).contains(rightOverlapProbe), "wheel lane overlaps visible right paddle")
+                  precondition(VirtualMouseGeometry.interaction(at: rightOverlapProbe, layout: layout) == .wheel, "wheel wins over right paddle too")
+                  let track = VirtualMouseGeometry.wheelTrackFrame(layout: layout)
+                  precondition(track.width <= 14 && track.height >= 30 && track.height <= 38, "visible wheel stays narrow and compact")
+                  precondition(layout.wheelFrame.contains(track), "visible track belongs to wheel hit lane")
+                  for horizontal in [layout.wheelFrame.minX + 1, layout.wheelFrame.midX, layout.wheelFrame.maxX - 1] {
+                      for vertical in [layout.wheelFrame.minY + 1, layout.wheelFrame.midY, layout.wheelFrame.maxY - 1] {
+                          precondition(VirtualMouseGeometry.interaction(at: CGPoint(x: horizontal, y: vertical), layout: layout) == .wheel, "entire thumb lane scrolls rather than moving cursor")
+                      }
+                  }
+                  var wheelRemainder: CGFloat = 0
+                  var wheelTotal: Int32 = 0
+                  for _ in 0..<40 {
+                      let result = VirtualMouseGeometry.wheelUnits(for: 0.5, sensitivity: 1.5, remainder: wheelRemainder)
+                      wheelTotal += result.units
+                      wheelRemainder = result.remainder
+                  }
+                  precondition(wheelTotal == 69, "20pt thumb drag emits sensitivity-scaled scroll units")
+                  precondition(VirtualMouseGeometry.wheelUnits(for: 40, sensitivity: 1.5, remainder: 0).units == 138, "40pt drag emits sensitivity-scaled units")
+                  precondition(VirtualMouseGeometry.wheelUnits(for: -20, sensitivity: 1.5, remainder: 0).units == -69, "reverse thumb drag reverses scroll")
+                  precondition(VirtualMouseGeometry.wheelUnits(for: 0, sensitivity: 1.5, remainder: 0.5).units == 0, "stationary finger preserves fractional scroll without emitting")
+                  let closeGlyph = VirtualMouseGeometry.collapseGlyphFrame(layout: layout)
+                  precondition(closeGlyph.width == 16 && layout.collapseButtonFrame.width == 24 && layout.collapseButtonFrame.minY / layout.bodyFrame.height > 0.7, "small close control sits at tail")
                   precondition(VirtualMouseGeometry.interaction(at: CGPoint(x: layout.collapseButtonFrame.midX, y: layout.collapseButtonFrame.midY), layout: layout) == .collapse, "compact collapse hit")
                   precondition(VirtualMouseGeometry.interaction(at: CGPoint(x: layout.moveFrame.midX, y: layout.moveFrame.midY), layout: layout) == .move, "palm area moves pointer")
+                  precondition(layout.moveFrame.height >= 32, "palm remains reachable at minimum supported height")
+                  precondition(!layout.moveFrame.intersects(layout.wheelFrame) && !layout.moveFrame.intersects(layout.collapseButtonFrame), "palm excludes wheel and tail control")
                   precondition(layout.resizeHandleFrame.isEmpty && layout.middleButtonFrame.isEmpty, "obsolete resize and text controls are removed")
                   precondition(VirtualMouseGeometry.contains(CGPoint(x: layout.bodyFrame.midX, y: layout.bodyFrame.midY), in: presentation.localizedToBody), "mouse body hit region is active")
                   precondition(!VirtualMouseGeometry.contains(CGPoint(x: -1, y: -1), in: presentation.localizedToBody), "transparent area does not intercept touches")
+                  precondition(VirtualMouseGeometry.interaction(at: CGPoint(x: layout.bodyFrame.maxX + 2, y: layout.bodyFrame.midY), layout: layout) == nil, "transparent outside edge has no interaction")
+                  for corner in [CGPoint(x: 2, y: 2), CGPoint(x: layout.bodyFrame.maxX - 2, y: 2), CGPoint(x: 2, y: layout.bodyFrame.maxY - 2), CGPoint(x: layout.bodyFrame.maxX - 2, y: layout.bodyFrame.maxY - 2)] {
+                      precondition(!VirtualMouseGeometry.contains(corner, in: presentation.localizedToBody) && VirtualMouseGeometry.interaction(at: corner, layout: layout) == nil, "transparent bounding-box corners pass touches through")
+                  }
               }
           }
+          let defaultMouse = VirtualMouseGeometry.presentation(
+              configuration: VirtualMouseConfiguration(enabled: true, scale: VirtualMouseConfiguration.defaultScale, normalizedPosition: VirtualMouseConfiguration.defaultPosition),
+              in: CGRect(x: 0, y: 0, width: 393, height: 852),
+              insets: VirtualMouseInsets(top: 8, left: 8, bottom: 34, right: 8),
+              collapsed: false
+          )
+          precondition(!defaultMouse.isCollapsed, "default mouse remains expanded on a phone viewport")
           var launcherDrag = VirtualMouseLauncherDrag(startPoint: CGPoint(x: 10, y: 10))
           precondition(launcherDrag.move(to: CGPoint(x: 13, y: 13)) == .zero && !launcherDrag.isDragging, "collapsed mouse tap stays a tap")
           precondition(launcherDrag.move(to: CGPoint(x: 30, y: 24)) == CGPoint(x: 20, y: 14) && launcherDrag.isDragging, "collapsed mouse starts moving after threshold")
