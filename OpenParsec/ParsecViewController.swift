@@ -234,6 +234,10 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		glkView.updateSize(width: geometry.contentSize.width, height: geometry.contentSize.height)
 		contentView.frame = CGRect(origin: .zero, size: geometry.contentSize)
 		scrollView.contentSize = geometry.contentSize
+		if displayMode == .fit {
+			contentView.frame.origin = CGPoint(x: max(0, -geometry.contentOffset.x),
+											   y: max(0, -geometry.contentOffset.y))
+		}
 		scrollView.contentOffset = geometry.scrollOffset
 		visibleContentRect = CGRect(origin: geometry.scrollOffset, size: viewport)
 		CParsec.setFrame(geometry.contentSize.width, geometry.contentSize.height, UIScreen.main.scale)
@@ -423,8 +427,13 @@ class ParsecViewController: UIViewController, UIScrollViewDelegate, ParsecTouchI
 		glkView.updateSize(width: geometry.contentSize.width, height: geometry.contentSize.height)
 		contentView.frame = CGRect(origin: .zero, size: geometry.contentSize)
 		scrollView.contentSize = geometry.contentSize
+		if displayMode == .fit {
+			contentView.frame.origin = CGPoint(x: max(0, -geometry.contentOffset.x),
+											   y: max(0, -geometry.contentOffset.y))
+		}
 		scrollView.contentOffset = geometry.scrollOffset
 		visibleContentRect = CGRect(origin: geometry.scrollOffset, size: CGSize(width: width, height: height))
+		CParsec.setFrame(geometry.contentSize.width, geometry.contentSize.height, UIScreen.main.scale)
 	}
 
 	override func viewDidAppear(_ animated: Bool) {
