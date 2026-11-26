@@ -38,9 +38,14 @@ final class VirtualMouseOverlay: UIView {
 		var lastPoint: CGPoint
 		var drag: VirtualMouseLauncherDrag
 		var wheelRemainder: CGFloat = 0
+		var wheelTravel: CGFloat = 0
+		var wheelDirection: CGFloat = 0
+		var wheelHoldDeadline: TimeInterval = 0
 	}
 
 	private var activeTouches: [UITouch: TouchState] = [:]
+	private var wheelRepeatTimer: Timer?
+	private weak var wheelRepeatTouch: UITouch?
 	private let bodyView = VirtualMouseBodyView()
 	private var reducer = VirtualMouseButtonReducer()
 
@@ -57,6 +62,10 @@ final class VirtualMouseOverlay: UIView {
 
 	required init?(coder: NSCoder) {
 		fatalError("init(coder:) has not been implemented")
+	}
+
+	deinit {
+		wheelRepeatTimer?.invalidate()
 	}
 
 	override func layoutSubviews() {
@@ -111,6 +120,7 @@ final class VirtualMouseOverlay: UIView {
 	}
 
 	func releaseAll() {
+		stopWheelRepeat()
 		for button in reducer.cancelAll().released {
 			onButton?(button, false)
 		}
@@ -172,6 +182,17 @@ final class VirtualMouseOverlay: UIView {
 				)
 				wheelUnits = result.units
 				state.wheelRemainder = result.remainder
+				if state.wheelTravel * delta.y < 0 {
+					state.wheelTravel = 0
+				}
+				state.wheelTravel += delta.y
+				if abs(state.wheelTravel) >= VirtualMouseGeometry.wheelMeaningfulMovement {
+					state.wheelDirection = state.wheelTravel > 0 ? 1 : -1
+					state.wheelTravel = 0
+					state.wheelHoldDeadline = ProcessInfo.processInfo.systemUptime
+						+ VirtualMouseGeometry.wheelHoldDelay
+					beginWheelRepeat(for: touch)
+				}
 			}
 			activeTouches[touch] = state
 			switch state.interaction {
@@ -211,6 +232,7 @@ final class VirtualMouseOverlay: UIView {
 		var collapseTarget: Bool?
 		for touch in touches {
 			guard var state = activeTouches.removeValue(forKey: touch) else { continue }
+			if wheelRepeatTouch === touch { stopWheelRepeat() }
 			if case .button(let button) = state.interaction {
 				for released in reducer.up(button).released { onButton?(released, false) }
 				continue
@@ -238,6 +260,44 @@ final class VirtualMouseOverlay: UIView {
 		}
 		bodyView.heldButtons = reducer.held
 		if let collapsed = collapseTarget { setCollapsed(collapsed) }
+	}
+
+	private func beginWheelRepeat(for touch: UITouch) {
+		if wheelRepeatTimer != nil && wheelRepeatTouch === touch { return }
+		stopWheelRepeat()
+		wheelRepeatTouch = touch
+		let timer = Timer(timeInterval: VirtualMouseGeometry.wheelHoldInterval, repeats: true) {
+			[weak self] _ in self?.repeatWheelTick()
+		}
+		RunLoop.main.add(timer, forMode: .common)
+		wheelRepeatTimer = timer
+	}
+
+	private func stopWheelRepeat() {
+		wheelRepeatTimer?.invalidate()
+		wheelRepeatTimer = nil
+		wheelRepeatTouch = nil
+	}
+
+	private func repeatWheelTick() {
+		guard !isHidden, configuration.enabled else {
+			stopWheelRepeat()
+			return
+		}
+		guard let touch = wheelRepeatTouch, var state = activeTouches[touch],
+			  case .wheel = state.interaction, state.wheelDirection != 0 else {
+			stopWheelRepeat()
+			return
+		}
+		guard ProcessInfo.processInfo.systemUptime >= state.wheelHoldDeadline else { return }
+		let result = VirtualMouseGeometry.wheelHoldUnits(
+			direction: state.wheelDirection,
+			sensitivity: CGFloat(SettingsHandler.scrollSensitivity),
+			remainder: state.wheelRemainder
+		)
+		state.wheelRemainder = result.remainder
+		activeTouches[touch] = state
+		if result.units != 0 { onScroll?(result.units) }
 	}
 
 	private func moveBody(by delta: CGPoint) {
@@ -280,7 +340,7 @@ final class VirtualMouseOverlay: UIView {
 		}
 		let wheel = accessibilityControl(label: "鼠标滚轮", frame: layout.wheelFrame)
 		wheel.accessibilityTraits = .adjustable
-		wheel.accessibilityHint = "按住中央滚轮上下滑动"
+		wheel.accessibilityHint = "上下滑动滚轮，按住可连续滚动"
 		wheel.onIncrement = { [weak self] in self?.scrollAccessibly(1) }
 		wheel.onDecrement = { [weak self] in self?.scrollAccessibly(-1) }
 		let palm = accessibilityControl(label: "鼠标掌托", frame: layout.moveFrame)

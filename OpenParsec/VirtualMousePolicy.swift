@@ -221,6 +221,10 @@ enum VirtualMouseGeometry {
 	static let minimumWheelWidth: CGFloat = 44
 	static let minimumWheelHeight: CGFloat = 72
 	static let wheelTrackWidth: CGFloat = 12
+	static let wheelHoldStep: CGFloat = 0.35
+	static let wheelMeaningfulMovement: CGFloat = 4
+	static let wheelHoldDelay: TimeInterval = 0.25
+	static let wheelHoldInterval: TimeInterval = 0.06
 	static let padding: CGFloat = 4
 	static let gap: CGFloat = 4
 
@@ -402,6 +406,13 @@ enum VirtualMouseGeometry {
 		let normalized = abs(accumulated - nearestInteger) <= 1e-9 ? nearestInteger : accumulated
 		let units = Int32(normalized)
 		return (units, normalized - CGFloat(units))
+	}
+
+	static func wheelHoldUnits(direction: CGFloat, sensitivity: CGFloat = 1.5,
+							   remainder: CGFloat) -> (units: Int32, remainder: CGFloat) {
+		let normalizedDirection: CGFloat = direction > 0 ? 1 : (direction < 0 ? -1 : 0)
+		return wheelUnits(for: normalizedDirection * wheelHoldStep,
+						  sensitivity: sensitivity, remainder: remainder)
 	}
 
 	static func movedPosition(for bodyFrame: CGRect, by delta: CGPoint,
